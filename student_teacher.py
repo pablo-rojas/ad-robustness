@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 
 from robustness import attacker, datasets
+from robustness.model_utils import make_and_restore_model
 from utils import extract_patches, initialize_model
 
 
@@ -35,6 +36,7 @@ class Detector(nn.Module):
         super(Detector, self).__init__()
         self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
         self.dataset = datasets.CIFAR('../cifar10-challenge/cifar10_data')
+        print("Dataset: " + str(self.dataset))
         self.patch_size = patch_size
         self.teacher, self.teacher_feature_extractor, self.students = initialize_model(num_students, self.dataset, device)
         self.criterion = nn.MSELoss()
@@ -48,7 +50,7 @@ class Detector(nn.Module):
         print("Teacher: " + str(self.teacher_feature_extractor))
         print("Students: " + str(self.students))
 
-    def evaluate(self, test_loader, eval_iter, num_batches=1000):
+    def evaluate(self, test_loader, eval_iter, num_batches=100):
         """
         Evaluates the detector model on the test dataset.
 
@@ -57,46 +59,37 @@ class Detector(nn.Module):
             eval_iter (int): The evaluation iteration.
             num_batches (int, optional): The number of batches to evaluate. Defaults to 1000.
         """
-        # Initialize lists to store average and maximum standard deviations
-        avg_std_list = []
-        max_std_list = []
+        # Initialize anomaly score list
+        as_list = []
 
         # Iterate over the test data loader
         for batch_idx, (inputs, labels) in enumerate(test_loader):
             inputs = inputs.to(self.device)
             
-            # Forward pass through the model to obtain standard deviation map
-            std_map, _ = self.forward(inputs)
-            
-            # Calculate average and maximum standard deviations
-            avg_std = torch.mean(std_map).item()
-            max_std = torch.max(std_map).item()
+            # Forward pass through the model to obtain the anomaly score
+            anomaly_score_map = self.forward(inputs)
+            anomaly_score = anomaly_score_map.mean()
+            print("Anomaly Score:", anomaly_score)
 
-            # Append the values to the respective lists
-            avg_std_list.append(avg_std)
-            max_std_list.append(max_std)
+            # Append the values to the anomaly score list
+            as_list.append(anomaly_score)
 
             # Break the loop if the desired number of batches is reached
             if ((batch_idx + 1) % num_batches == 0):
                 break
 
-        # Calculate the top 1% quantiles of average and maximum standard deviations
-        avg_std_top_1_percent = torch.quantile(torch.tensor(avg_std_list), 0.99).item()
-        max_std_top_1_percent = torch.quantile(torch.tensor(max_std_list), 0.99).item()
+        # Calculate the top 1% quantile 
+        as_top_1_percent = torch.quantile(torch.tensor(as_list), 0.99).item()
 
         # Log the top 1% quantiles to TensorBoard
-        self.writer.add_scalar('Evaluation/Top_1_percent_avg_std', avg_std_top_1_percent, eval_iter)
-        self.writer.add_scalar('Evaluation/Top_1_percent_max_std', max_std_top_1_percent, eval_iter)
+        self.writer.add_scalar('Evaluation/Top_1_percent_ad', as_top_1_percent, eval_iter)
 
         # Log histograms of average and maximum standard deviations to TensorBoard
-        self.writer.add_histogram('Histograms/avg_std', torch.tensor(avg_std_list), eval_iter)
-        self.writer.add_histogram('Histograms/max_std', torch.tensor(max_std_list), eval_iter)
+        self.writer.add_histogram('Histograms/anomaly_score', torch.tensor(as_list), eval_iter)
 
         # Initialize lists to store average and maximum standard deviations for adversarial examples
-        avg_std_list_adv = []
-        max_std_list_adv = []
-        acc_avg = 0
-        acc_max = 0
+        adv_as_list = []
+        accuracy = 0
 
         # Iterate over the test data loader again for adversarial examples
         for batch_idx, (inputs, label) in enumerate(test_loader):
@@ -104,36 +97,28 @@ class Detector(nn.Module):
             
             # Generate adversarial examples using the attacker
             target_label = (label + torch.randint_like(label, high=9)) % 10
-            adv_im = self.attacker(inputs.cuda(), target_label.cuda(), True, **self.attack_kwargs)
+            adv_im = self.attacker(inputs.to(self.device), target_label.to(self.device), True, **self.attack_kwargs)
             
             # Forward pass through the model to obtain standard deviation map for adversarial examples
-            std_map, _ = self.forward(adv_im)
+            anomaly_score_map = self.forward(adv_im)
+            anomaly_score = anomaly_score_map.mean()
             
-            # Calculate average and maximum standard deviations for adversarial examples
-            avg_std = torch.mean(std_map).item()
-            max_std = torch.max(std_map).item()
-
-            # Append the values to the respective lists
-            avg_std_list_adv.append(avg_std)
-            max_std_list_adv.append(max_std)
+            # Append the values to the anomaly score list
+            adv_as_list.append(anomaly_score)
 
             # Count the number of adversarial examples that have higher standard deviations than the top 1% quantiles
-            if avg_std > avg_std_top_1_percent:
-                acc_avg += 1
-            if max_std > max_std_top_1_percent:
-                acc_max += 1
+            if anomaly_score > as_top_1_percent:
+                accuracy += 1
 
             # Break the loop if the desired number of batches is reached
             if ((batch_idx + 1) % num_batches == 0):
                 break
         
         # Log the accuracy of adversarial examples to TensorBoard
-        self.writer.add_scalar('Evaluation/acc_avg', acc_avg/num_batches, eval_iter)
-        self.writer.add_scalar('Evaluation/acc_max', acc_max/num_batches, eval_iter)
+        self.writer.add_scalar('Evaluation/accuracy', accuracy/num_batches, eval_iter)
 
         # Log histograms of average and maximum standard deviations for adversarial examples to TensorBoard
-        self.writer.add_histogram('Histograms/adv_avg_std', torch.tensor(avg_std_list_adv), eval_iter)
-        self.writer.add_histogram('Histograms/adv_max_std', torch.tensor(max_std_list_adv), eval_iter)
+        self.writer.add_histogram('Histograms/adv_anomaly_score', torch.tensor(adv_as_list), eval_iter)
 
     def train_patch(self, patches):
         """
@@ -162,7 +147,7 @@ class Detector(nn.Module):
 
         return total_loss
 
-    def train_model(self, train_loader, test_loader, num_epochs=10, interval=10000):
+    def train_model(self, train_loader, test_loader, num_epochs=10, interval=1000):
         """
         Trains the detector model.
 
@@ -230,36 +215,42 @@ class Detector(nn.Module):
         # Iterate over each patch
         for patch in patches:
             patch = patch.to(self.device)
-
-            # Compute teacher output and store it
+            # Forward pass of the teacher model
             teacher_output = self.teacher_feature_extractor(patch).detach()
             teacher_outputs.append(teacher_output)
 
-            # Compute student output for each student and store them
+            # Forward pass of each student model
             for student_idx, student in enumerate(self.students):
                 student_output = student(patch)
                 student_outputs[student_idx].append(student_output)
 
-        # Concatenate teacher outputs
         teacher_flat = torch.cat(teacher_outputs, dim=0)
+        student_flat = torch.stack([torch.cat(student_outputs[i], dim=0) for i in range(len(self.students))])
 
-        # Initialize lists to store standard deviation maps and bias maps
-        std_maps = []
-        bias_maps = []
+        # Ensure teacher outputs are broadcastable to student outputs shape
+        teacher_outputs_expanded = teacher_flat.unsqueeze(0)
+        
+        # Calculate squared differences for regression error
+        squared_diffs = (student_flat - teacher_outputs_expanded) ** 2
+        
+        # Regression error: Mean of squared differences across all students
+        regression_error = squared_diffs.mean(dim=0).mean(dim=[0, 2, 3])
+        
+        # Calculate predictive uncertainty
+        student_outputs_squared = student_flat ** 2
+        teacher_outputs_squared_expanded = teacher_outputs_expanded ** 2
+        predictive_uncertainty = (student_outputs_squared - teacher_outputs_squared_expanded).mean(dim=0).mean(dim=[0, 2, 3])
+    
+        e_mean = torch.tensor(regression_error).mean().item()
+        e_std = torch.tensor(regression_error).std().item()
+        v_mean = torch.tensor(predictive_uncertainty).mean().item()
+        v_std = torch.tensor(predictive_uncertainty).std().item()
 
-        # Compute standard deviation map and bias map for each student
-        for student_idx in range(len(self.students)):
-            student_flat = torch.cat(student_outputs[student_idx], dim=0)
-            std_map = torch.std(student_flat - teacher_flat, dim=0)
-            bias_map = torch.mean(student_flat - teacher_flat, dim=0)
-            std_maps.append(std_map)
-            bias_maps.append(bias_map)
+        # Calculate anomaly score
+        anomaly_score = (regression_error - e_mean) / e_std + (predictive_uncertainty - v_mean) / v_std
 
-        # Compute average standard deviation map and average bias map
-        avg_std_map = torch.mean(torch.stack(std_maps), dim=0)
-        avg_bias_map = torch.mean(torch.stack(bias_maps), dim=0)
+        return anomaly_score
 
-        return avg_std_map, avg_bias_map
 
 
 # Test code
@@ -279,7 +270,7 @@ if __name__ == "__main__":
     iterations = args.iterations
     targeted = args.targeted
 
-    if not linf:
+    if linf:
         attack_kwargs = {
             'constraint': 'inf', # L-inf PGD 
             'eps': epsilon, # Epsilon constraint (L-inf norm)
