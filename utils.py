@@ -102,6 +102,8 @@ def initialize_model(num_students, dataset, device):
         return initialize_model_cifar(num_students, dataset, device)
     elif dataset.ds_name == 'mnist':
         return initialize_model_mnist(num_students, dataset, device)
+    else
+        raise ValueError(f"Dataset {dataset.ds_name} not supported")
 
 
 
