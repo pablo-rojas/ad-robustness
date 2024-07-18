@@ -61,28 +61,43 @@ class Detector(nn.Module):
         """
         # Initialize anomaly score list
         as_list = []
+        e_list = []
+        u_list = []
 
         # Iterate over the test data loader
         for batch_idx, (inputs, labels) in enumerate(test_loader):
             inputs = inputs.to(self.device)
             
             # Forward pass through the model to obtain the anomaly score
-            anomaly_score_map = self.forward(inputs)
-            anomaly_score = anomaly_score_map.mean()
-            print("Anomaly Score:", anomaly_score)
+            regression_error, predictive_uncertainty = self.forward(inputs)
+            print("Regression error: " + str(regression_error))
+            print("Predictive uncertainty: " + str(predictive_uncertainty))
 
             # Append the values to the anomaly score list
-            as_list.append(anomaly_score)
+            e_list.append(regression_error)
+            u_list.append(predictive_uncertainty)
 
             # Break the loop if the desired number of batches is reached
             if ((batch_idx + 1) % num_batches == 0):
                 break
 
+        self.e_mean = torch.tensor(e_list).mean().item()
+        self.e_std = torch.tensor(e_list).std().item()
+        self.v_mean = torch.tensor(u_list).mean().item()
+        self.v_std = torch.tensor(u_list).std().item()
+
+        # Normalize e_list and u_list
+        e_list = [(e - self.e_mean) / self.e_std for e in e_list]
+        u_list = [(u - self.v_mean) / self.v_std for u in u_list]
+
+        # Compute the anomaly score list
+        as_list = [e + u for e, u in zip(e_list, u_list)]
+
         # Calculate the top 1% quantile 
-        as_top_1_percent = torch.quantile(torch.tensor(as_list), 0.99).item()
+        as_top_1_percent = torch.quantile(torch.tensor(as_list), 0.90).item()
 
         # Log the top 1% quantiles to TensorBoard
-        self.writer.add_scalar('Evaluation/Top_1_percent_ad', as_top_1_percent, eval_iter)
+        self.writer.add_scalar('Evaluation/threshold', as_top_1_percent, eval_iter)
 
         # Log histograms of average and maximum standard deviations to TensorBoard
         self.writer.add_histogram('Histograms/anomaly_score', torch.tensor(as_list), eval_iter)
@@ -100,8 +115,10 @@ class Detector(nn.Module):
             adv_im = self.attacker(inputs.to(self.device), target_label.to(self.device), True, **self.attack_kwargs)
             
             # Forward pass through the model to obtain standard deviation map for adversarial examples
-            anomaly_score_map = self.forward(adv_im)
-            anomaly_score = anomaly_score_map.mean()
+            regression_error, predictive_uncertainty = self.forward(adv_im)
+
+            # Calculate the anomaly score for adversarial examples
+            anomaly_score = (regression_error - self.e_mean) / self.e_std + (predictive_uncertainty - self.v_mean) / self.v_std
             
             # Append the values to the anomaly score list
             adv_as_list.append(anomaly_score)
@@ -158,8 +175,9 @@ class Detector(nn.Module):
             interval (int, optional): The interval for evaluation. Defaults to 10000.
         """
         eval_iter = 0
+
+        # Train the model for the specified number of epochs
         for epoch in range(num_epochs):
-            # Train loop
             for batch_idx, (inputs, _) in enumerate(train_loader):
                 inputs = inputs.to(self.device)
                 patches = extract_patches(inputs, self.patch_size)
@@ -172,6 +190,7 @@ class Detector(nn.Module):
                 # Log the training loss
                 self.writer.add_scalar('Loss/train', loss.item(), epoch * len(train_loader) + batch_idx)
 
+                # Evaluate the model at regular intervals
                 if ((batch_idx + 1) % interval == 0):
                     self.eval()
                     self.evaluate(test_loader, eval_iter)
@@ -224,36 +243,23 @@ class Detector(nn.Module):
                 student_output = student(patch)
                 student_outputs[student_idx].append(student_output.squeeze())
 
+        # Concatenate teacher and student outputs
         teacher_flat = torch.cat(teacher_outputs, dim=0)
         student_flat = torch.stack([torch.cat(student_outputs[i], dim=0) for i in range(len(self.students))])
-        print("Teacher flat:", teacher_flat.shape)
-        print("Student flat:", student_flat.shape)
 
-        # Ensure teacher outputs are broadcastable to student outputs shape
-        teacher_outputs_expanded = teacher_flat.unsqueeze(0)
-        
+        # Calculate mean of student outputs
+        students_mean = student_flat.mean(dim=0)
+
         # Calculate squared differences for regression error
-        squared_diffs = (student_flat - teacher_outputs_expanded) ** 2
-        print("Squared diffs:", squared_diffs.shape)
-        
+        squared_diffs = (students_mean - teacher_flat) ** 2
+
         # Regression error: Mean of squared differences across all students
         regression_error = squared_diffs.mean(dim=0)
-        print("Regression error:", regression_error.shape)
-        
-        # Calculate predictive uncertainty
-        student_outputs_squared = student_flat ** 2
-        teacher_outputs_squared_expanded = teacher_outputs_expanded ** 2
-        predictive_uncertainty = (student_outputs_squared - teacher_outputs_squared_expanded).mean(dim=0)
-    
-        e_mean = torch.tensor(regression_error).mean().item()
-        e_std = torch.tensor(regression_error).std().item()
-        v_mean = torch.tensor(predictive_uncertainty).mean().item()
-        v_std = torch.tensor(predictive_uncertainty).std().item()
 
-        # Calculate anomaly score
-        anomaly_score = (regression_error - e_mean) / e_std + (predictive_uncertainty - v_mean) / v_std
+        # Calculate predictive uncertainty (variance)
+        predictive_uncertainty = student_flat.var(dim=0)
 
-        return anomaly_score
+        return regression_error.item(), predictive_uncertainty.mean().item()
 
 
 
