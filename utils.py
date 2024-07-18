@@ -27,6 +27,23 @@ def extract_patches(image, patch_size):
 
     return patches
 
+class ShallowNet(nn.Module):
+    def __init__(self):
+        super(ShallowNet, self).__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        return x
+
 def initialize_model_cifar(num_students, dataset, device, resume_path='models/cifar_nat.pt'):
     """
     Initializes the teacher and student models. All models will use the same architecture, but the teacher will use 
@@ -54,17 +71,15 @@ def initialize_model_cifar(num_students, dataset, device, resume_path='models/ci
     #     teacher_model.load_state_dict(checkpoint['model_state_dict'])
 
     # Create the teacher feature extractor (removing the fully connected layer)
-    teacher_feature_extractor = torch.nn.Sequential(*list(teacher_model.children())[:-1])
+    teacher_feature_extractor = torch.nn.Sequential(*list(teacher_model.children())[:8])
     teacher_feature_extractor.to(device)
     teacher_feature_extractor.eval()
 
-    # Initialize student models with random weights
+    # Initialize student models with random weights using the shallow network
     student_models = []
     for _ in range(num_students):
-        student_model = models.resnet18(weights=None)
-        student_feature_extractor = torch.nn.Sequential(*list(student_model.children())[:-1])
-        student_feature_extractor.to(device)
-        student_models.append(student_feature_extractor)
+        student_model = ShallowNet().to(device)
+        student_models.append(student_model)
 
     return teacher_model, teacher_feature_extractor, student_models
 

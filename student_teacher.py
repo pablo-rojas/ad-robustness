@@ -41,7 +41,7 @@ class Detector(nn.Module):
         self.teacher, self.teacher_feature_extractor, self.students = initialize_model(num_students, self.dataset, device)
         self.criterion = nn.MSELoss()
         self.optimizer = torch.optim.Adam(
-            [param for student in self.students for param in student.parameters()], lr=0.000001
+            [param for student in self.students for param in student.parameters()], lr=0.0001
         )
         self.attacker = attacker.Attacker(self.teacher, self.dataset)
         self.attack_kwargs = attack_kwargs
@@ -50,7 +50,7 @@ class Detector(nn.Module):
         print("Teacher: " + str(self.teacher_feature_extractor))
         print("Students: " + str(self.students))
 
-    def evaluate(self, test_loader, eval_iter, num_batches=100):
+    def evaluate(self, test_loader, eval_iter, num_batches=1000):
         """
         Evaluates the detector model on the test dataset.
 
@@ -131,7 +131,7 @@ class Detector(nn.Module):
             torch.Tensor: The total loss.
         """
         # Forward pass of the teacher
-        teacher_outputs = self.teacher_feature_extractor(patches).detach()
+        teacher_outputs = self.teacher_feature_extractor(patches).detach().squeeze()
 
         # Accumulate losses from each student model
         total_loss = 0
@@ -216,30 +216,34 @@ class Detector(nn.Module):
         for patch in patches:
             patch = patch.to(self.device)
             # Forward pass of the teacher model
-            teacher_output = self.teacher_feature_extractor(patch).detach()
+            teacher_output = self.teacher_feature_extractor(patch).detach().squeeze()
             teacher_outputs.append(teacher_output)
 
             # Forward pass of each student model
             for student_idx, student in enumerate(self.students):
                 student_output = student(patch)
-                student_outputs[student_idx].append(student_output)
+                student_outputs[student_idx].append(student_output.squeeze())
 
         teacher_flat = torch.cat(teacher_outputs, dim=0)
         student_flat = torch.stack([torch.cat(student_outputs[i], dim=0) for i in range(len(self.students))])
+        print("Teacher flat:", teacher_flat.shape)
+        print("Student flat:", student_flat.shape)
 
         # Ensure teacher outputs are broadcastable to student outputs shape
         teacher_outputs_expanded = teacher_flat.unsqueeze(0)
         
         # Calculate squared differences for regression error
         squared_diffs = (student_flat - teacher_outputs_expanded) ** 2
+        print("Squared diffs:", squared_diffs.shape)
         
         # Regression error: Mean of squared differences across all students
-        regression_error = squared_diffs.mean(dim=0).mean(dim=[0, 2, 3])
+        regression_error = squared_diffs.mean(dim=0)
+        print("Regression error:", regression_error.shape)
         
         # Calculate predictive uncertainty
         student_outputs_squared = student_flat ** 2
         teacher_outputs_squared_expanded = teacher_outputs_expanded ** 2
-        predictive_uncertainty = (student_outputs_squared - teacher_outputs_squared_expanded).mean(dim=0).mean(dim=[0, 2, 3])
+        predictive_uncertainty = (student_outputs_squared - teacher_outputs_squared_expanded).mean(dim=0)
     
         e_mean = torch.tensor(regression_error).mean().item()
         e_std = torch.tensor(regression_error).std().item()
