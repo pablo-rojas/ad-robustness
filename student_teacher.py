@@ -5,7 +5,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from robustness import attacker, datasets
 from robustness.model_utils import make_and_restore_model
-from utils import extract_patches, initialize_model
+from model_utils import extract_patches, initialize_model
 
 
 class Detector(nn.Module):

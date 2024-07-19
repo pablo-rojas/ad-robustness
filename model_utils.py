@@ -44,6 +44,48 @@ class ShallowNet(nn.Module):
         x = x.view(x.size(0), -1)
         return x
 
+# Modify VGG11 for MNIST
+class ModifiedVGG11(nn.Module):
+    def __init__(self):
+        super(ModifiedVGG11, self).__init__()
+        self.model = models.vgg11(pretrained=False)
+        self.model.features[0] = nn.Conv2d(1, 64, kernel_size=3, padding=1)  # Change input channels to 1
+        self.model.classifier[6] = nn.Linear(4096, 10)  # Change output classes to 10
+    
+    def forward(self, x):
+        return self.model(x)
+
+# Define a custom deep CNN for MNIST
+class DeepCNN(nn.Module):
+    def __init__(self):
+        super(DeepCNN, self).__init__()
+        self.layer1 = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2))
+        self.layer2 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(2))
+        self.layer3 = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=3),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.MaxPool2d(2))
+        self.fc1 = nn.Linear(128*2*2, 512)
+        self.fc2 = nn.Linear(512, 10)
+    
+    def forward(self, x):
+        out = self.layer1(x)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = out.view(out.size(0), -1)
+        out = self.fc1(out)
+        out = self.fc2(out)
+        return out
+
 def initialize_model_cifar(num_students, dataset, device, resume_path='models/cifar_nat.pt'):
     """
     Initializes the teacher and student models. All models will use the same architecture, but the teacher will use 
