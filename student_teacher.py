@@ -6,6 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 from robustness import attacker, datasets
 from robustness.model_utils import make_and_restore_model
 from model_utils import extract_patches, initialize_model
+from dataset_utils import get_dataset
 
 
 class Detector(nn.Module):
@@ -32,10 +33,10 @@ class Detector(nn.Module):
         writer (torch.utils.tensorboard.SummaryWriter): The TensorBoard writer.
     """
 
-    def __init__(self, num_students, attack_kwargs, patch_size=5, device='cuda'):
+    def __init__(self, num_students, attack_kwargs, dataset_name='mnist', patch_size=5, device='cuda'):
         super(Detector, self).__init__()
         self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
-        self.dataset = datasets.CIFAR('../cifar10-challenge/cifar10_data')
+        self.dataset = get_dataset(dataset_name)
         print("Dataset: " + str(self.dataset))
         self.patch_size = patch_size
         self.teacher, self.teacher_feature_extractor, self.students = initialize_model(num_students, self.dataset, device)
@@ -50,7 +51,7 @@ class Detector(nn.Module):
         print("Teacher: " + str(self.teacher_feature_extractor))
         print("Students: " + str(self.students))
 
-    def evaluate(self, test_loader, eval_iter, num_batches=1000):
+    def evaluate(self, test_loader, eval_iter, num_batches=100):
         """
         Evaluates the detector model on the test dataset.
 
@@ -63,6 +64,7 @@ class Detector(nn.Module):
         as_list = []
         e_list = []
         u_list = []
+        nat_accuracy = 0
 
         # Iterate over the test data loader
         for batch_idx, (inputs, labels) in enumerate(test_loader):
@@ -70,8 +72,12 @@ class Detector(nn.Module):
             
             # Forward pass through the model to obtain the anomaly score
             regression_error, predictive_uncertainty = self.forward(inputs)
-            print("Regression error: " + str(regression_error))
-            print("Predictive uncertainty: " + str(predictive_uncertainty))
+
+            # Forward through the teacher model to obtain the prediction
+            y = self.teacher(inputs).detach().cpu()
+
+            # Calculate the natural accuracy
+            nat_accuracy += (y.argmax(1) == labels).sum().item()/num_batches
 
             # Append the values to the anomaly score list
             e_list.append(regression_error)
@@ -80,7 +86,7 @@ class Detector(nn.Module):
             # Break the loop if the desired number of batches is reached
             if ((batch_idx + 1) % num_batches == 0):
                 break
-
+        
         self.e_mean = torch.tensor(e_list).mean().item()
         self.e_std = torch.tensor(e_list).std().item()
         self.v_mean = torch.tensor(u_list).mean().item()
@@ -105,6 +111,7 @@ class Detector(nn.Module):
         # Initialize lists to store average and maximum standard deviations for adversarial examples
         adv_as_list = []
         accuracy = 0
+        adv_accuracy = 0
 
         # Iterate over the test data loader again for adversarial examples
         for batch_idx, (inputs, label) in enumerate(test_loader):
@@ -113,6 +120,12 @@ class Detector(nn.Module):
             # Generate adversarial examples using the attacker
             target_label = (label + torch.randint_like(label, high=9)) % 10
             adv_im = self.attacker(inputs.to(self.device), target_label.to(self.device), True, **self.attack_kwargs)
+
+            # Forward through the teacher model to obtain the prediction
+            y = self.teacher(adv_im).detach().cpu()
+
+            # Calculate the natural accuracy
+            adv_accuracy += (y.argmax(1) == labels).sum().item()/num_batches
             
             # Forward pass through the model to obtain standard deviation map for adversarial examples
             regression_error, predictive_uncertainty = self.forward(adv_im)
@@ -130,6 +143,9 @@ class Detector(nn.Module):
             # Break the loop if the desired number of batches is reached
             if ((batch_idx + 1) % num_batches == 0):
                 break
+
+        print("Natural accuracy: " + str(nat_accuracy))
+        print("Adversarial accuracy: " + str(adv_accuracy))
         
         # Log the accuracy of adversarial examples to TensorBoard
         self.writer.add_scalar('Evaluation/accuracy', accuracy/num_batches, eval_iter)
@@ -268,6 +284,7 @@ if __name__ == "__main__":
 
     # Argument parser setup
     parser = argparse.ArgumentParser(description='Adversarial Example Generator')
+    parser.add_argument('--dataset', type=str, default='mnist', help='Dataset name')
     parser.add_argument('--epsilon', type=float, default=0.1, help='Epsilon constraint (L-inf norm)')
     parser.add_argument('--linf', type=bool, default=False, help='L-inf constraint (True) or L2 (False)')
     parser.add_argument('--targeted', type=bool, default=False, help='Chose if the attach is targeted (True) or untargeted (False)')
@@ -279,6 +296,7 @@ if __name__ == "__main__":
     linf = args.linf
     iterations = args.iterations
     targeted = args.targeted
+    dataset_name = args.dataset
 
     if linf:
         attack_kwargs = {
@@ -300,6 +318,6 @@ if __name__ == "__main__":
         }
 
     # Example of how to use the Detector class
-    detector = Detector(10, attack_kwargs, patch_size=9)
+    detector = Detector(10, attack_kwargs, dataset_name=dataset_name, patch_size=9)
     train_loader, test_loader = detector.dataset.make_loaders(workers=4, batch_size=1)
     detector.train_model(train_loader, test_loader)
