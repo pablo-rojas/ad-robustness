@@ -100,10 +100,10 @@ class Detector(nn.Module):
         as_list = [e + u for e, u in zip(e_list, u_list)]
 
         # Calculate the top 1% quantile 
-        as_top_1_percent = torch.quantile(torch.tensor(as_list), 0.90).item()
+        threshold = torch.quantile(torch.tensor(as_list), 0.90).item()
 
         # Log the top 1% quantiles to TensorBoard
-        self.writer.add_scalar('Evaluation/threshold', as_top_1_percent, eval_iter)
+        self.writer.add_scalar('Evaluation/threshold', threshold, eval_iter)
 
         # Log histograms of average and maximum standard deviations to TensorBoard
         self.writer.add_histogram('Histograms/anomaly_score', torch.tensor(as_list), eval_iter)
@@ -137,7 +137,7 @@ class Detector(nn.Module):
             adv_as_list.append(anomaly_score)
 
             # Count the number of adversarial examples that have higher standard deviations than the top 1% quantiles
-            if anomaly_score > as_top_1_percent:
+            if anomaly_score > threshold:
                 accuracy += 1
 
             # Break the loop if the desired number of batches is reached

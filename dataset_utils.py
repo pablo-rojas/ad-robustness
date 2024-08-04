@@ -51,6 +51,24 @@ class MNISTDataset(Dataset):
         test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True)
 
         return train_loader, test_loader
+    
+class CIFARDataset(datasets.CIFAR):
+    def __init__(self, data_path='../cifar10-challenge/cifar10_data'):
+        # Define transformations similar to MNISTDataset
+        transform_train = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))
+        ])
+        
+        transform_test = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))
+        ])
+        
+        super().__init__(data_path=data_path, transform_train=transform_train, transform_test=transform_test)
+        self.ds_name = 'cifar'
 
 def get_loaders(dataset, workers=4, batch_size=100):
     if dataset.ds_name == 'mnist':
@@ -64,6 +82,6 @@ def get_dataset(dataset_name):
     if dataset_name == 'mnist':
         return MNISTDataset()
     elif dataset_name == 'cifar':
-        return datasets.CIFAR('../cifar10-challenge/cifar10_data')
+        return CIFARDataset()
     else:
         raise ValueError(f'Invalid dataset: {dataset_name}')
