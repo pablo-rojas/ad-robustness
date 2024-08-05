@@ -165,6 +165,41 @@ def initialize_model_mnist(num_students, dataset, device, resume_path='models/mn
 
     return teacher_model, teacher_feature_extractor, student_models
 
+def initialize_model_imagenet(num_students, dataset, device):
+    """
+    Initializes the teacher and student models. All models will use the same architecture, but the teacher will use 
+    pretrained weights, and the students will have random weights. The three versions of the model will be: one 
+    teacher with the complete classifier (including the fully connected layer), one teacher without the fully 
+    connected layer (feature extractor only), and a bag of students (also feature extractor only).
+
+    Args:
+        num_students (int): The number of student models.
+        device (str): The device to use for training.
+        resume_path (str, optional): The path to a checkpoint to resume from. Defaults to 'models/cifar_linf_8.pt'.
+
+    Returns:
+        torch.nn.Module, torch.nn.Module, list: The teacher model, teacher feature extractor, and student models.
+    """
+    # Model definition
+    teacher_model = models.resnet18(pretrained=True)
+    teacher_model = teacher_model.to(device)
+
+    # Set the model to evaluation mode
+    teacher_model.eval()
+
+    # Create the teacher feature extractor (removing the fully connected layer)
+    teacher_feature_extractor = torch.nn.Sequential(*list(teacher_model.children())[:8])
+    teacher_feature_extractor.to(device)
+    teacher_feature_extractor.eval()
+
+     # Initialize student models with random weights using the shallow network
+    student_models = []
+    for _ in range(num_students):
+        student_model = ShallowNet(num_channels=3).to(device)
+        student_models.append(student_model)
+
+    return teacher_model, teacher_feature_extractor, student_models
+
 def initialize_model(num_students, dataset, device):
     """
     Initializes the teacher and student models. All models will use the same architecture, but the teacher will use 
@@ -184,6 +219,8 @@ def initialize_model(num_students, dataset, device):
         return initialize_model_cifar(num_students, dataset, device)
     elif dataset.ds_name == 'mnist':
         return initialize_model_mnist(num_students, dataset, device)
+    elif dataset.ds_name == 'imagenet':
+        return initialize_model_imagenet(num_students, dataset, device)
     else:
         raise ValueError(f"Dataset {dataset.ds_name} not supported")
 

@@ -1,8 +1,9 @@
 import torch
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, Dataset
-from robustness import datasets
+from robustness import datasets as robustness_datasets
 from sklearn.datasets import fetch_openml
+import torchvision.datasets as datasets
 import numpy as np
 
 class MNISTDataset(Dataset):
@@ -52,7 +53,7 @@ class MNISTDataset(Dataset):
 
         return train_loader, test_loader
     
-class CIFARDataset(datasets.CIFAR):
+class CIFARDataset(robustness_datasets.CIFAR):
     def __init__(self, data_path='../cifar10-challenge/cifar10_data'):
         # Define transformations similar to MNISTDataset
         transform_train = transforms.Compose([
@@ -70,18 +71,42 @@ class CIFARDataset(datasets.CIFAR):
         super().__init__(data_path=data_path, transform_train=transform_train, transform_test=transform_test)
         self.ds_name = 'cifar'
 
+class ImageNetDataset:
+    def __init__(self, data_path='path/to/imagenet'):
+        # Define transformations
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+        
+        self.data = datasets.ImageFolder(root=f"{data_path}/train", transform=transform)
+        self.val_data = datasets.ImageFolder(root=f"{data_path}/val", transform=transform)
+        self.ds_name = 'imagenet'
+        self.mean = torch.tensor([0.485, 0.456, 0.406])
+        self.std = torch.tensor([0.229, 0.224, 0.225])
+
+    def make_loaders(self, workers=4, batch_size=100):
+        train_loader = DataLoader(self.data, batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
+        val_loader = DataLoader(self.val_data, batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True)
+        return train_loader, val_loader
+
 def get_loaders(dataset, workers=4, batch_size=100):
     if dataset.ds_name == 'mnist':
         return dataset.make_loaders(workers=workers, batch_size=batch_size)
     elif dataset.ds_name == 'cifar':
         return dataset.make_loaders(workers=workers, batch_size=batch_size)
+    elif dataset.ds_name == 'imagenet':
+        return dataset.make_loaders(workers=workers, batch_size=batch_size)
     else:
         raise ValueError(f'Invalid dataset: {dataset}')
 
-def get_dataset(dataset_name):
+def get_dataset(dataset_name, data_path='/home/pablo/Datasets/ImageNet'):
     if dataset_name == 'mnist':
         return MNISTDataset()
     elif dataset_name == 'cifar':
-        return CIFARDataset()
+        return CIFARDataset(data_path)
+    elif dataset_name == 'imagenet':
+        return ImageNetDataset(data_path)
     else:
         raise ValueError(f'Invalid dataset: {dataset_name}')
