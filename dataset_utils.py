@@ -76,9 +76,11 @@ class ImageNetDataset:
         # Define transformations
         transform = transforms.Compose([
             transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            transforms.ToTensor()
+            #
         ])
+
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         
         self.data = datasets.ImageFolder(root=f"{data_path}/train", transform=transform)
         self.val_data = datasets.ImageFolder(root=f"{data_path}/val", transform=transform)

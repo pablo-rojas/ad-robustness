@@ -2,6 +2,7 @@ import argparse
 import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
+import cv2
 
 from robustness import attacker, datasets
 from robustness.model_utils import make_and_restore_model
@@ -47,11 +48,11 @@ class Detector(nn.Module):
         self.attacker = attacker.Attacker(self.teacher, self.dataset)
         self.attack_kwargs = attack_kwargs
         self.to(self.device)
-        self.writer = SummaryWriter()  # TensorBoard writer
+        self.writer = SummaryWriter(comment=f"_{dataset_name}_l{self.attack_kwargs['constraint']}_{self.attack_kwargs['eps']}")
         print("Teacher: " + str(self.teacher_feature_extractor))
         print("Students: " + str(self.students))
 
-    def evaluate(self, test_loader, eval_iter, num_batches=100):
+    def evaluate(self, test_loader, eval_iter, num_batches=100, save=False):
         """
         Evaluates the detector model on the test dataset.
 
@@ -74,7 +75,7 @@ class Detector(nn.Module):
             regression_error, predictive_uncertainty = self.forward(inputs)
 
             # Forward through the teacher model to obtain the prediction
-            y = self.teacher(inputs).detach().cpu()
+            y = self.teacher(self.dataset.normalize(inputs)).detach().cpu()
 
             # Calculate the natural accuracy
             nat_accuracy += (y.argmax(1) == labels).sum().item()/num_batches
@@ -103,7 +104,7 @@ class Detector(nn.Module):
         threshold = torch.quantile(torch.tensor(as_list), 0.90).item()
 
         # Log the top 1% quantiles to TensorBoard
-        self.writer.add_scalar('Evaluation/threshold', threshold, eval_iter)
+        self.writer.add_scalar('Detector Evaluation/threshold', threshold, eval_iter)
 
         # Log histograms of average and maximum standard deviations to TensorBoard
         self.writer.add_histogram('Histograms/anomaly_score', torch.tensor(as_list), eval_iter)
@@ -122,7 +123,7 @@ class Detector(nn.Module):
             adv_im = self.attacker(inputs.to(self.device), target_label.to(self.device), True, **self.attack_kwargs)
 
             # Forward through the teacher model to obtain the prediction
-            y = self.teacher(adv_im).detach().cpu()
+            y = self.teacher(self.dataset.normalize(adv_im)).detach().cpu()
 
             # Calculate the natural accuracy
             adv_accuracy += (y.argmax(1) == labels).sum().item()/num_batches
@@ -140,15 +141,18 @@ class Detector(nn.Module):
             if anomaly_score > threshold:
                 accuracy += 1
 
+            if (save):
+                cv2.imwrite(str(batch_idx) + "_adv.png", adv_im)
+
             # Break the loop if the desired number of batches is reached
             if ((batch_idx + 1) % num_batches == 0):
                 break
 
-        print("Natural accuracy: " + str(nat_accuracy))
-        print("Adversarial accuracy: " + str(adv_accuracy))
+        self.writer.add_scalar('Classifier Evaluation/natural_accuracy', nat_accuracy, eval_iter)
+        self.writer.add_scalar('Classifier Evaluation/adversarial_accuracy', adv_accuracy, eval_iter)
         
         # Log the accuracy of adversarial examples to TensorBoard
-        self.writer.add_scalar('Evaluation/accuracy', accuracy/num_batches, eval_iter)
+        self.writer.add_scalar('Detector Evaluation/accuracy', accuracy/num_batches, eval_iter)
 
         # Log histograms of average and maximum standard deviations for adversarial examples to TensorBoard
         self.writer.add_histogram('Histograms/adv_anomaly_score', torch.tensor(adv_as_list), eval_iter)
@@ -180,7 +184,7 @@ class Detector(nn.Module):
 
         return total_loss
 
-    def train_model(self, train_loader, test_loader, num_epochs=10, interval=1000):
+    def train_model(self, train_loader, test_loader, num_epochs=10, interval=5000):
         """
         Trains the detector model.
 
@@ -196,7 +200,7 @@ class Detector(nn.Module):
         for epoch in range(num_epochs):
             for batch_idx, (inputs, _) in enumerate(train_loader):
                 inputs = inputs.to(self.device)
-                patches = extract_patches(inputs, self.patch_size)
+                patches = extract_patches(self.dataset.normalize(inputs), self.patch_size)
 
                 # Reshape patches to have sufficient batch size
                 patches = patches.view(-1, inputs.size(1), self.patch_size, self.patch_size)
@@ -241,7 +245,7 @@ class Detector(nn.Module):
             torch.Tensor, torch.Tensor: The average standard deviation map and average bias map.
         """
         # Extract patches from the input image
-        patches = extract_patches(image, self.patch_size)
+        patches = extract_patches(self.dataset.normalize(image), self.patch_size)
         
         # Initialize lists to store teacher and student outputs
         teacher_outputs = []
