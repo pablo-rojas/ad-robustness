@@ -8,6 +8,7 @@ from robustness import attacker, datasets
 from robustness.model_utils import make_and_restore_model
 from model_utils import extract_patches, initialize_model
 from dataset_utils import get_dataset
+from eval_utils import partial_auc
 
 
 class Detector(nn.Module):
@@ -156,6 +157,11 @@ class Detector(nn.Module):
 
         # Log histograms of average and maximum standard deviations for adversarial examples to TensorBoard
         self.writer.add_histogram('Histograms/adv_anomaly_score', torch.tensor(adv_as_list), eval_iter)
+
+        pAUC = partial_auc(as_list, adv_as_list)
+
+        # Log the partial AUC to TensorBoard
+        self.writer.add_scalar('Detector Evaluation/pAUC', pAUC, eval_iter)
 
     def train_patch(self, patches):
         """

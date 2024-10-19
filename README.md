@@ -16,6 +16,12 @@ Install the necessary packages using:
 pip install torch torchvision tensorboard robustness
 ```
 
+In order to be compatible with recent PyTorch versions, you may need to perform a modification to the modules in the robustness library. In the imagenet_models folders, in all .py files, `torchvision.models.utils` should be changed to `torch.hub`:
+
+```python
+from torch.hub import load_state_dict_from_url
+```
+
 ## Detector Class
 
 The `Detector` class is the core of this implementation. It comprises several key components:

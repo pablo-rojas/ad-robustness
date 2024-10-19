@@ -1,0 +1,6 @@
+torch 
+torchvision 
+torchaudio
+tensorboard
+robustness
+opencv-python
