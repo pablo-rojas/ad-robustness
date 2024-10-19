@@ -1,6 +1,4 @@
 import torch
-import os
-import dill
 from torch import nn
 from robustness.attacker import AttackerModel
 import torchvision.models as models
