@@ -3,9 +3,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.models as models
-from torch.utils.data import DataLoader
-from torchvision import transforms
-from robustness import datasets
 
 from dataset_utils import get_dataset, get_loaders 
 

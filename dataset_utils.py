@@ -4,7 +4,6 @@ from torch.utils.data import DataLoader, Dataset
 from robustness import datasets as robustness_datasets
 from sklearn.datasets import fetch_openml
 import torchvision.datasets as datasets
-import numpy as np
 
 class MNISTDataset(Dataset):
     def __init__(self):
