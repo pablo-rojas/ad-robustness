@@ -6,6 +6,7 @@ import torchvision.models as models
 
 from dataset_utils import get_dataset, get_loaders 
 import time
+import os
 
 def train(model, train_loader, criterion, optimizer, device):
     model.train()
@@ -75,6 +76,8 @@ def main(args):
     # Save the best model checkpoint
     if best_model_wts is not None:
         model.load_state_dict(best_model_wts)
+        if not os.path.exists('models'):
+            os.makedirs('models')
         file_name = f'models/resnet18_{args.dataset}.pth'
         torch.save(model.state_dict(), file_name)
         print(f'Best model saved to {file_name} with accuracy {best_acc:.4f}')
