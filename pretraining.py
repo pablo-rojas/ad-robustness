@@ -50,12 +50,19 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
+    best_acc = 0.0
+    best_model_wts = None
     start_time = time.time()
+    
     for epoch in range(args.epochs):
         epoch_start_time = time.time()
         
         train_loss = train(model, train_loader, criterion, optimizer, device)
         test_loss, test_acc = test(model, test_loader, criterion, device)
+        
+        if test_acc >= best_acc:
+            best_acc = test_acc
+            best_model_wts = model.state_dict()
         
         epoch_end_time = time.time()
         elapsed_time = epoch_end_time - start_time
@@ -65,8 +72,12 @@ def main(args):
         print(f'Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}, '
               f'Elapsed Time: {elapsed_time:.2f}s, Estimated Time Left: {estimated_time_left:.2f}s')
 
-    # Save the model checkpoint
-    torch.save(model.state_dict(), f'models/resnet18_{args.dataset}.pth')
+    # Save the best model checkpoint
+    if best_model_wts is not None:
+        model.load_state_dict(best_model_wts)
+        file_name = f'models/resnet18_{args.dataset}.pth'
+        torch.save(model.state_dict(), file_name)
+        print(f'Best model saved to {file_name} with accuracy {best_acc:.4f}')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train ResNet18 on MNIST or CIFAR datasets')
