@@ -70,8 +70,15 @@ def main(args):
         epoch_time = epoch_end_time - epoch_start_time
         estimated_time_left = epoch_time * (args.epochs - (epoch + 1))
         
+        elapsed_hours, elapsed_rem = divmod(elapsed_time, 3600)
+        elapsed_minutes, elapsed_seconds = divmod(elapsed_rem, 60)
+        
+        est_hours, est_rem = divmod(estimated_time_left, 3600)
+        est_minutes, est_seconds = divmod(est_rem, 60)
+        
         print(f'Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}, '
-              f'Elapsed Time: {elapsed_time:.2f}s, Estimated Time Left: {estimated_time_left:.2f}s')
+              f'Elapsed Time: {int(elapsed_hours):02}:{int(elapsed_minutes):02}:{int(elapsed_seconds):02}, '
+              f'Estimated Time Left: {int(est_hours):02}:{int(est_minutes):02}:{int(est_seconds):02}')
 
     # Save the best model checkpoint
     if best_model_wts is not None:
