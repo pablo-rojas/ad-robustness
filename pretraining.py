@@ -5,6 +5,7 @@ import torch.optim as optim
 import torchvision.models as models
 
 from dataset_utils import get_dataset, get_loaders 
+import time
 
 def train(model, train_loader, criterion, optimizer, device):
     model.train()
@@ -49,10 +50,20 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
+    start_time = time.time()
     for epoch in range(args.epochs):
+        epoch_start_time = time.time()
+        
         train_loss = train(model, train_loader, criterion, optimizer, device)
         test_loss, test_acc = test(model, test_loader, criterion, device)
-        print(f'Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}')
+        
+        epoch_end_time = time.time()
+        elapsed_time = epoch_end_time - start_time
+        epoch_time = epoch_end_time - epoch_start_time
+        estimated_time_left = epoch_time * (args.epochs - (epoch + 1))
+        
+        print(f'Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}, '
+              f'Elapsed Time: {elapsed_time:.2f}s, Estimated Time Left: {estimated_time_left:.2f}s')
 
     # Save the model checkpoint
     torch.save(model.state_dict(), f'models/resnet18_{args.dataset}.pth')
