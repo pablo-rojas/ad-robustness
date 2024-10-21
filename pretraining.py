@@ -52,7 +52,7 @@ def main(args):
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     best_acc = 0.0
-    best_model_wts = None
+    best_model_wts = N
     start_time = time.time()
     
     for epoch in range(args.epochs):
