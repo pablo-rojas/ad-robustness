@@ -5,6 +5,7 @@ from robustness import attacker, datasets
 
 from torch.utils.tensorboard import SummaryWriter
 from model_utils import extract_patches
+from dataset_utils import get_dataset
 from eval_utils import partial_auc
 import cv2
 from tqdm import tqdm
@@ -59,15 +60,16 @@ if __name__ == "__main__":
     # Initialize the Tensorboard writer
     writer = SummaryWriter(comment=f"_{dataset_name}_l{attack_kwargs['constraint']}_{attack_kwargs['eps']}")
 
+    # Get the dataset and create data loaders
+    dataset = get_dataset(dataset_name)
+    train_loader, test_loader = dataset.make_loaders(workers=4, batch_size=1)
+
     # Initialize the detector model
-    detector = Detector(10, dataset_name=dataset_name, patch_size=9)
+    detector = Detector(10, dataset, patch_size=9, device=device)
     detector.load("models/detector_exp000")
 
-    # Create data loaders
-    train_loader, test_loader = detector.dataset.make_loaders(workers=4, batch_size=1)
-
     # Initialize attacker
-    attacker = attacker.Attacker(detector.teacher, detector.dataset).to(device)
+    attacker = attacker.Attacker(detector.teacher, dataset).to(device)
 
     # Initialize anomaly score list
     as_list = []
@@ -83,10 +85,10 @@ if __name__ == "__main__":
         inputs = inputs.to(device)
         
         # Forward pass through the model to obtain the anomaly score
-        regression_error, predictive_uncertainty = detector.forward(inputs)
+        regression_error, predictive_uncertainty = detector.forward(dataset.normalize(inputs))
 
         # Forward through the teacher model to obtain the prediction
-        y = detector.teacher(detector.dataset.normalize(inputs)).detach().cpu()
+        y = detector.teacher(dataset.normalize(inputs)).detach().cpu()
 
         # Calculate the natural accuracy
         nat_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
@@ -135,7 +137,7 @@ if __name__ == "__main__":
         adv_im = attacker(inputs.to(device), target_label.to(device), True, **attack_kwargs)
 
         # Forward through the teacher model to obtain the prediction
-        y = detector.teacher(detector.dataset.normalize(adv_im)).detach().cpu()
+        y = detector.teacher(dataset.normalize(inputs)).detach().cpu()
 
         # Calculate the natural accuracy
         adv_accuracy += (y.argmax(1) == labels).sum().item()/n_samples

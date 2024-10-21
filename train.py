@@ -3,6 +3,7 @@ import torch
 from detector import Detector  # Import the Detector class
 from torch.utils.tensorboard import SummaryWriter
 from model_utils import extract_patches
+from dataset_utils import get_dataset
 from tqdm import tqdm
 
 if __name__ == "__main__":
@@ -53,11 +54,15 @@ if __name__ == "__main__":
     # Initialize the Tensorboard writer
     writer = SummaryWriter(comment=f"_{dataset_name}_l{attack_kwargs['constraint']}_{attack_kwargs['eps']}")
 
-    # Initialize the detector model
-    detector = Detector(10, dataset_name=dataset_name, patch_size=9)
 
-    # Create data loaders
-    train_loader, test_loader = detector.dataset.make_loaders(workers=4, batch_size=1)
+    # Get the dataset and create data loaders
+    dataset = get_dataset(dataset_name)
+    train_loader, test_loader = dataset.make_loaders(workers=4, batch_size=1)
+
+    # Initialize the detector model
+    detector = Detector(10, dataset, patch_size=9, device=device)
+
+
 
     i = 0
     # Train the model for the specified number of epochs
@@ -65,7 +70,7 @@ if __name__ == "__main__":
         while i < steps:
             for batch_idx, (inputs, _) in enumerate(train_loader):
                 inputs = inputs.to(device)
-                patches = extract_patches(detector.dataset.normalize(inputs), patch_size)
+                patches = extract_patches(dataset.normalize(inputs), patch_size)
 
                 # Reshape patches to have sufficient batch size
                 patches = patches.view(-1, inputs.size(1), patch_size, patch_size)
