@@ -3,6 +3,7 @@ import torch
 from detector import Detector  # Import the Detector class
 from torch.utils.tensorboard import SummaryWriter
 from model_utils import extract_patches
+from tqdm import tqdm
 
 if __name__ == "__main__":
 
@@ -60,20 +61,22 @@ if __name__ == "__main__":
 
     i = 0
     # Train the model for the specified number of epochs
-    while i < steps:
-        for batch_idx, (inputs, _) in enumerate(train_loader):
-            inputs = inputs.to(device)
-            patches = extract_patches(detector.dataset.normalize(inputs), patch_size)
+    with tqdm(total=steps, desc="Training Progress") as pbar:
+        while i < steps:
+            for batch_idx, (inputs, _) in enumerate(train_loader):
+                inputs = inputs.to(device)
+                patches = extract_patches(detector.dataset.normalize(inputs), patch_size)
 
-            # Reshape patches to have sufficient batch size
-            patches = patches.view(-1, inputs.size(1), patch_size, patch_size)
-            patches = patches.to(device)
-            loss = detector.train_patch(patches)
+                # Reshape patches to have sufficient batch size
+                patches = patches.view(-1, inputs.size(1), patch_size, patch_size)
+                patches = patches.to(device)
+                loss = detector.train_patch(patches)
 
-            # Log the training loss
-            writer.add_scalar('Loss/train', loss.item(), i)
+                # Log the training loss
+                writer.add_scalar('Loss/train', loss.item(), i)
 
-            i += 1
+                i += 1
+                pbar.update(1)
 
     detector.save_model("models/detector_exp000")
 
