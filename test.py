@@ -32,7 +32,7 @@ if __name__ == "__main__":
     steps = 10000
     patch_size = 9
     save = False
-    n_samples = 20 # Number of samples to evaluate
+    n_samples = 1000 # Number of samples to evaluate
 
     # Setup attack parameters based on args
     if linf:

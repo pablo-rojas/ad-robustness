@@ -21,8 +21,6 @@ class Detector(nn.Module):
         device (str, optional): The device to use for training. Defaults to 'cuda'.
 
     Attributes:
-        device (torch.device): The device used for training.
-        dataset (robustness.datasets.Dataset): The dataset object.
         patch_size (int): The size of the patches.
         teacher (torch.nn.Module): The teacher model.
         teacher_feature_extractor (torch.nn.Module): The teacher feature extractor.
@@ -105,7 +103,7 @@ class Detector(nn.Module):
 
         # Perform a single backward pass and optimizer step for all students
         self.optimizer.zero_grad()
-        total_loss.backward()  # This will accumulate gradients for all students
+        total_loss.backward()
         self.optimizer.step()
 
         return total_loss

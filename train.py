@@ -25,7 +25,7 @@ if __name__ == "__main__":
     targeted = args.targeted
     dataset_name = args.dataset
     epochs = args.epochs
-    steps = 10000
+    steps = 50000
     patch_size=9
 
     # Setup attack parameters based on args
