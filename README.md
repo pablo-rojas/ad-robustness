@@ -10,6 +10,7 @@ This repository contains the implementation of a detector model designed to iden
 - PyTorch
 - robustness (a library for adversarial attacks)
 - tensorboard
+- cv2
 
 Install the necessary packages using:
 ```bash

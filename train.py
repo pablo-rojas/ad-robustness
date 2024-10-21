@@ -75,3 +75,5 @@ if __name__ == "__main__":
 
             i += 1
 
+    detector.save_model("models/detector_exp000")
+

@@ -3,6 +3,8 @@ import torch
 from detector import Detector  # Import the Detector class
 from torch.utils.tensorboard import SummaryWriter
 from model_utils import extract_patches
+from eval_utils import partial_auc
+import cv2
 
 if __name__ == "__main__":
 
@@ -24,7 +26,9 @@ if __name__ == "__main__":
     dataset_name = args.dataset
     epochs = args.epochs
     steps = 10000
-    patch_size=9
+    patch_size = 9
+    save = False
+    n_samples = 100 # Number of samples to evaluate
 
     # Setup attack parameters based on args
     if linf:
@@ -58,19 +62,103 @@ if __name__ == "__main__":
     # Create data loaders
     train_loader, test_loader = detector.dataset.make_loaders(workers=4, batch_size=1)
 
-    i = 0
-    # Train the model for the specified number of epochs
-    while i < steps:
-        for batch_idx, (inputs, _) in enumerate(train_loader):
-            inputs = inputs.to(device)
-            patches = extract_patches(detector.dataset.normalize(inputs), patch_size)
+    # Initialize anomaly score list
+    as_list = []
+    e_list = []
+    u_list = []
+    nat_accuracy = 0
 
-            # Reshape patches to have sufficient batch size
-            patches = patches.view(-1, inputs.size(1), patch_size, patch_size)
-            patches = patches.to(device)
-            loss = detector.train_patch(patches)
+    # Iterate over the test data loader
+    for batch_idx, (inputs, labels) in enumerate(test_loader):
+        inputs = inputs.to(device)
+        
+        # Forward pass through the model to obtain the anomaly score
+        regression_error, predictive_uncertainty = detector.forward(inputs)
 
-            # Log the training loss
-            writer.add_scalar('Loss/train', loss.item(), i)
+        # Forward through the teacher model to obtain the prediction
+        y = detector.teacher(detector.dataset.normalize(inputs)).detach().cpu()
 
-            i += 1
+        # Calculate the natural accuracy
+        nat_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
+
+        # Append the values to the anomaly score list
+        e_list.append(regression_error)
+        u_list.append(predictive_uncertainty)
+
+        # Break the loop if the desired number of batches is reached
+        if ((batch_idx + 1) % n_samples == 0):
+            break
+    
+    detector.e_mean = torch.tensor(e_list).mean().item()
+    detector.e_std = torch.tensor(e_list).std().item()
+    detector.v_mean = torch.tensor(u_list).mean().item()
+    detector.v_std = torch.tensor(u_list).std().item()
+
+    # Normalize e_list and u_list
+    e_list = [(e - detector.e_mean) / detector.e_std for e in e_list]
+    u_list = [(u - detector.v_mean) / detector.v_std for u in u_list]
+
+    # Compute the anomaly score list
+    as_list = [e + u for e, u in zip(e_list, u_list)]
+
+    # Calculate the top 1% quantile 
+    threshold = torch.quantile(torch.tensor(as_list), 0.90).item()
+
+    # Log the top 1% quantiles to TensorBoard
+    writer.add_scalar('Detector Evaluation/threshold', threshold, 0)
+
+    # Log histograms of average and maximum standard deviations to TensorBoard
+    writer.add_histogram('Histograms/anomaly_score', torch.tensor(as_list), 0)
+
+    # Initialize lists to store average and maximum standard deviations for adversarial examples
+    adv_as_list = []
+    accuracy = 0
+    adv_accuracy = 0
+
+    # Iterate over the test data loader again for adversarial examples
+    for batch_idx, (inputs, label) in enumerate(test_loader):
+        inputs = inputs.to(device)
+        
+        # Generate adversarial examples using the attacker
+        target_label = (label + torch.randint_like(label, high=9)) % 10
+        adv_im = detector.attacker(inputs.to(device), target_label.to(device), True, **detector.attack_kwargs)
+
+        # Forward through the teacher model to obtain the prediction
+        y = detector.teacher(detector.dataset.normalize(adv_im)).detach().cpu()
+
+        # Calculate the natural accuracy
+        adv_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
+        
+        # Forward pass through the model to obtain standard deviation map for adversarial examples
+        regression_error, predictive_uncertainty = detector.forward(adv_im)
+
+        # Calculate the anomaly score for adversarial examples
+        anomaly_score = (regression_error - detector.e_mean) / detector.e_std + (predictive_uncertainty - detector.v_mean) / detector.v_std
+        
+        # Append the values to the anomaly score list
+        adv_as_list.append(anomaly_score)
+
+        # Count the number of adversarial examples that have higher standard deviations than the top 1% quantiles
+        if anomaly_score > threshold:
+            accuracy += 1
+
+        if (save):
+            cv2.imwrite(str(batch_idx) + "_adv.png", adv_im)
+
+        # Break the loop if the desired number of batches is reached
+        if ((batch_idx + 1) % n_samples == 0):
+            break
+
+    writer.add_scalar('Classifier Evaluation/natural_accuracy', nat_accuracy, 0)
+    writer.add_scalar('Classifier Evaluation/adversarial_accuracy', adv_accuracy, 0)
+    
+    # Log the accuracy of adversarial examples to TensorBoard
+    writer.add_scalar('Detector Evaluation/accuracy', accuracy/n_samples, 0)
+
+    # Log histograms of average and maximum standard deviations for adversarial examples to TensorBoard
+    writer.add_histogram('Histograms/adv_anomaly_score', torch.tensor(adv_as_list), 0)
+
+    pAUC = partial_auc(as_list, adv_as_list)
+
+    # Log the partial AUC to TensorBoard
+    writer.add_scalar('Detector Evaluation/pAUC', pAUC, 0)

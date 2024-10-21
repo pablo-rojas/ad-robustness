@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 import cv2
+import os
 
 from robustness import attacker, datasets
 from model_utils import extract_patches, initialize_model
