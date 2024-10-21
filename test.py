@@ -59,6 +59,8 @@ if __name__ == "__main__":
     # Initialize the detector model
     detector = Detector(10, attack_kwargs, dataset_name=dataset_name, patch_size=9)
 
+    detector.load("models/detector_exp000")
+
     # Create data loaders
     train_loader, test_loader = detector.dataset.make_loaders(workers=4, batch_size=1)
 
