@@ -54,7 +54,7 @@ if __name__ == "__main__":
     writer = SummaryWriter(comment=f"_{dataset_name}_l{attack_kwargs['constraint']}_{attack_kwargs['eps']}")
 
     # Initialize the detector model
-    detector = Detector(10, attack_kwargs, dataset_name=dataset_name, patch_size=9)
+    detector = Detector(10, dataset_name=dataset_name, patch_size=9)
 
     # Create data loaders
     train_loader, test_loader = detector.dataset.make_loaders(workers=4, batch_size=1)

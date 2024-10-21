@@ -1,7 +1,6 @@
 import argparse
 import torch
 import torch.nn as nn
-from torch.utils.tensorboard import SummaryWriter
 import cv2
 import os
 
@@ -30,12 +29,9 @@ class Detector(nn.Module):
         students (list): The student models.
         criterion (torch.nn.Module): The loss criterion.
         optimizer (torch.optim.Optimizer): The optimizer.
-        attacker (robustness.attacker.Attacker): The attacker.
-        attack_kwargs (dict): The keyword arguments for the attacker.
-        writer (torch.utils.tensorboard.SummaryWriter): The TensorBoard writer.
     """
 
-    def __init__(self, num_students, attack_kwargs, dataset_name='mnist', patch_size=5, device='cuda'):
+    def __init__(self, num_students, dataset_name='mnist', patch_size=5, device='cuda'):
         super(Detector, self).__init__()
         self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
         self.dataset = get_dataset(dataset_name)
@@ -46,10 +42,7 @@ class Detector(nn.Module):
         self.optimizer = torch.optim.Adam(
             [param for student in self.students for param in student.parameters()], lr=0.0001
         )
-        self.attacker = attacker.Attacker(self.teacher, self.dataset)
-        self.attack_kwargs = attack_kwargs
         self.to(self.device)
-        self.writer = SummaryWriter(comment=f"_{dataset_name}_l{self.attack_kwargs['constraint']}_{self.attack_kwargs['eps']}")
         print("Teacher: " + str(self.teacher_feature_extractor))
         print("Students: " + str(self.students))
 
@@ -130,11 +123,6 @@ class Detector(nn.Module):
         # Calculate the top 1% quantile 
         threshold = torch.quantile(torch.tensor(as_list), 0.90).item()
 
-        # Log the top 1% quantiles to TensorBoard
-        self.writer.add_scalar('Detector Evaluation/threshold', threshold, eval_iter)
-
-        # Log histograms of average and maximum standard deviations to TensorBoard
-        self.writer.add_histogram('Histograms/anomaly_score', torch.tensor(as_list), eval_iter)
 
         # Initialize lists to store average and maximum standard deviations for adversarial examples
         adv_as_list = []
@@ -175,19 +163,6 @@ class Detector(nn.Module):
             if ((batch_idx + 1) % num_batches == 0):
                 break
 
-        self.writer.add_scalar('Classifier Evaluation/natural_accuracy', nat_accuracy, eval_iter)
-        self.writer.add_scalar('Classifier Evaluation/adversarial_accuracy', adv_accuracy, eval_iter)
-        
-        # Log the accuracy of adversarial examples to TensorBoard
-        self.writer.add_scalar('Detector Evaluation/accuracy', accuracy/num_batches, eval_iter)
-
-        # Log histograms of average and maximum standard deviations for adversarial examples to TensorBoard
-        self.writer.add_histogram('Histograms/adv_anomaly_score', torch.tensor(adv_as_list), eval_iter)
-
-        pAUC = partial_auc(as_list, adv_as_list)
-
-        # Log the partial AUC to TensorBoard
-        self.writer.add_scalar('Detector Evaluation/pAUC', pAUC, eval_iter)
 
     def train_patch(self, patches):
         """
@@ -239,8 +214,6 @@ class Detector(nn.Module):
                 patches = patches.to(self.device)
                 loss = self.train_patch(patches)
 
-                # Log the training loss
-                self.writer.add_scalar('Loss/train', loss.item(), epoch * len(train_loader) + batch_idx)
 
                 # Evaluate the model at regular intervals
                 if ((batch_idx + 1) % interval == 0):

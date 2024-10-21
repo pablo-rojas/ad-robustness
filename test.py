@@ -1,10 +1,13 @@
 import argparse
 import torch
 from detector import Detector  # Import the Detector class
+from robustness import attacker, datasets
+
 from torch.utils.tensorboard import SummaryWriter
 from model_utils import extract_patches
 from eval_utils import partial_auc
 import cv2
+from tqdm import tqdm
 
 if __name__ == "__main__":
 
@@ -28,7 +31,7 @@ if __name__ == "__main__":
     steps = 10000
     patch_size = 9
     save = False
-    n_samples = 100 # Number of samples to evaluate
+    n_samples = 20 # Number of samples to evaluate
 
     # Setup attack parameters based on args
     if linf:
@@ -57,12 +60,14 @@ if __name__ == "__main__":
     writer = SummaryWriter(comment=f"_{dataset_name}_l{attack_kwargs['constraint']}_{attack_kwargs['eps']}")
 
     # Initialize the detector model
-    detector = Detector(10, attack_kwargs, dataset_name=dataset_name, patch_size=9)
-
+    detector = Detector(10, dataset_name=dataset_name, patch_size=9)
     detector.load("models/detector_exp000")
 
     # Create data loaders
     train_loader, test_loader = detector.dataset.make_loaders(workers=4, batch_size=1)
+
+    # Initialize attacker
+    attacker = attacker.Attacker(detector.teacher, detector.dataset).to(device)
 
     # Initialize anomaly score list
     as_list = []
@@ -70,8 +75,11 @@ if __name__ == "__main__":
     u_list = []
     nat_accuracy = 0
 
-    # Iterate over the test data loader
-    for batch_idx, (inputs, labels) in enumerate(test_loader):
+    # Iterate over the test data loader with a progress bar
+    sample_count = 0
+    for batch_idx, (inputs, labels) in enumerate(tqdm(test_loader, desc="Evaluating the detector model on natural images", total=n_samples)):
+        if sample_count >= n_samples:
+            break
         inputs = inputs.to(device)
         
         # Forward pass through the model to obtain the anomaly score
@@ -87,9 +95,7 @@ if __name__ == "__main__":
         e_list.append(regression_error)
         u_list.append(predictive_uncertainty)
 
-        # Break the loop if the desired number of batches is reached
-        if ((batch_idx + 1) % n_samples == 0):
-            break
+        sample_count += 1
     
     detector.e_mean = torch.tensor(e_list).mean().item()
     detector.e_std = torch.tensor(e_list).std().item()
@@ -118,12 +124,15 @@ if __name__ == "__main__":
     adv_accuracy = 0
 
     # Iterate over the test data loader again for adversarial examples
-    for batch_idx, (inputs, label) in enumerate(test_loader):
+    sample_count = 0
+    for batch_idx, (inputs, label) in enumerate(tqdm(test_loader, desc="Evaluating the detector model on adversarial images", total=n_samples)):
+        if sample_count >= n_samples:
+            break
         inputs = inputs.to(device)
         
         # Generate adversarial examples using the attacker
         target_label = (label + torch.randint_like(label, high=9)) % 10
-        adv_im = detector.attacker(inputs.to(device), target_label.to(device), True, **detector.attack_kwargs)
+        adv_im = attacker(inputs.to(device), target_label.to(device), True, **attack_kwargs)
 
         # Forward through the teacher model to obtain the prediction
         y = detector.teacher(detector.dataset.normalize(adv_im)).detach().cpu()
@@ -147,9 +156,7 @@ if __name__ == "__main__":
         if (save):
             cv2.imwrite(str(batch_idx) + "_adv.png", adv_im)
 
-        # Break the loop if the desired number of batches is reached
-        if ((batch_idx + 1) % n_samples == 0):
-            break
+        sample_count += 1
 
     writer.add_scalar('Classifier Evaluation/natural_accuracy', nat_accuracy, 0)
     writer.add_scalar('Classifier Evaluation/adversarial_accuracy', adv_accuracy, 0)
