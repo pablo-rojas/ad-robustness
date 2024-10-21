@@ -19,3 +19,4 @@ venv/
 # runtime files
 runs/
 models/
+results/

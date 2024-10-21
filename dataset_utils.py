@@ -111,3 +111,23 @@ def get_dataset(dataset_name, data_path='/home/pablo/Datasets/ImageNet'):
         return ImageNetDataset(data_path)
     else:
         raise ValueError(f'Invalid dataset: {dataset_name}')
+    
+# Define the denormalization function
+def denormalize_image(image, dataset):
+    """
+    Reverses the normalization of an image based on the dataset's mean and std.
+    
+    Args:
+    - image (torch.Tensor): Normalized image tensor of shape [C, H, W].
+    - dataset (object): The dataset object containing the mean and std.
+    
+    Returns:
+    - torch.Tensor: The denormalized image tensor.
+    """
+    mean = dataset.mean  # Mean from the dataset
+    std = dataset.std    # Std from the dataset
+    
+    image = image.clone()  # Clone to avoid modifying original tensor
+    for t, m, s in zip(image, mean, std):
+        t.mul_(s).add_(m)  # Reverse normalization: image * std + mean
+    return image

@@ -5,10 +5,24 @@ from robustness import attacker, datasets
 
 from torch.utils.tensorboard import SummaryWriter
 from model_utils import extract_patches
-from dataset_utils import get_dataset
+from dataset_utils import get_dataset, denormalize_image
 from eval_utils import partial_auc
 import cv2
+import numpy as np
 from tqdm import tqdm
+
+def save_image(save, filename, image, dataset):
+    if save:
+        # Denormalize the first input image in the batch
+        image = denormalize_image(image, dataset)  # Apply denormalization
+            
+        # Convert the tensor back to (H, W, C) format and scale to [0, 255]
+        image_np = image.permute(1, 2, 0).numpy()  # Convert to (H, W, C) format
+        image_np = np.clip(image_np * 255.0, 0, 255).astype(np.uint8)  # Scale and convert to uint8
+
+        # convert to BGR
+        image_np = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(filename, image_np)
 
 if __name__ == "__main__":
 
@@ -31,8 +45,8 @@ if __name__ == "__main__":
     epochs = args.epochs
     steps = 10000
     patch_size = 9
-    save = False
-    n_samples = 1000 # Number of samples to evaluate
+    save = True
+    n_samples = 10 # Number of samples to evaluate
 
     # Setup attack parameters based on args
     if linf:
@@ -82,13 +96,13 @@ if __name__ == "__main__":
     for batch_idx, (inputs, labels) in enumerate(tqdm(test_loader, desc="Evaluating the detector model on natural images", total=n_samples)):
         if sample_count >= n_samples:
             break
-        inputs = inputs.to(device)
+        inputs = dataset.normalize(inputs.to(device))
         
         # Forward pass through the model to obtain the anomaly score
-        regression_error, predictive_uncertainty = detector.forward(dataset.normalize(inputs))
+        regression_error, predictive_uncertainty = detector.forward(inputs)
 
         # Forward through the teacher model to obtain the prediction
-        y = detector.teacher(dataset.normalize(inputs)).detach().cpu()
+        y = detector.teacher(inputs).detach().cpu()
 
         # Calculate the natural accuracy
         nat_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
@@ -96,6 +110,9 @@ if __name__ == "__main__":
         # Append the values to the anomaly score list
         e_list.append(regression_error)
         u_list.append(predictive_uncertainty)
+
+        save_image(save, f"results/{batch_idx}_nat.png", inputs[0].detach().cpu(), dataset)
+
 
         sample_count += 1
     
@@ -130,14 +147,15 @@ if __name__ == "__main__":
     for batch_idx, (inputs, label) in enumerate(tqdm(test_loader, desc="Evaluating the detector model on adversarial images", total=n_samples)):
         if sample_count >= n_samples:
             break
-        inputs = inputs.to(device)
+        inputs = inputs.to(device) # IMPORTANT: Should I normalize the inputs here?
         
         # Generate adversarial examples using the attacker
         target_label = (label + torch.randint_like(label, high=9)) % 10
         adv_im = attacker(inputs.to(device), target_label.to(device), True, **attack_kwargs)
+        adv_im = dataset.normalize(adv_im)
 
         # Forward through the teacher model to obtain the prediction
-        y = detector.teacher(dataset.normalize(inputs)).detach().cpu()
+        y = detector.teacher(adv_im).detach().cpu()
 
         # Calculate the natural accuracy
         adv_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
@@ -155,8 +173,7 @@ if __name__ == "__main__":
         if anomaly_score > threshold:
             accuracy += 1
 
-        if (save):
-            cv2.imwrite(str(batch_idx) + "_adv.png", adv_im)
+        save_image(save, f"results/"+str(batch_idx) + "_adv.png", adv_im[0].detach().cpu(), dataset)
 
         sample_count += 1
 
