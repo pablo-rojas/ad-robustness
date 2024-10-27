@@ -1,19 +1,20 @@
 {
-    "dataset": "imagenet",
-    "save_path": "models/detector_exp001",
-    "patch_size": 9,
+    "experiment_name": "detector_exp004",
+    "dataset": "cifar",
+    "patch_size": 17,
+    "num_students": 10,
     "train": {
-        "steps": 50000
+        "steps": 100000
     },
     "test": {
         "attacker": {
             "epsilon": 0.1,
-            "constraint": "linf",
+            "constraint": "inf",
             "targeted": false,
             "iterations": 100,
             "step_size": 0.01 
         },
-        "samples": 20,
+        "samples": 1000,
         "save": true
     }
 }

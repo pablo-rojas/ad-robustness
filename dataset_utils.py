@@ -20,15 +20,15 @@ class MNISTDataset(Dataset):
         transform = transforms.Compose([
             transforms.ToPILImage(),
             transforms.Grayscale(num_output_channels=1),
-            transforms.Resize((224, 224)),  # Resize to 224x224
+            #transforms.Resize((224, 224)),  # Resize to 224x224
             transforms.Lambda(lambda x: x.convert('RGB')),  # Convert to 3 channels
-            transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5,))  # Adjusted normalization
+            transforms.ToTensor()
         ])
         self.transform = transform
         self.ds_name = 'mnist'  # Correctly set the dataset name
-        self.mean = torch.tensor([0.5])
-        self.std = torch.tensor([0.5])
+        self.mean = torch.tensor([0.5, 0.5, 0.5])
+        self.std = torch.tensor([0.5, 0.5, 0.5])
+        self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
 
     def __len__(self):
         return len(self.data)
@@ -54,38 +54,31 @@ class MNISTDataset(Dataset):
     
 class CIFARDataset(robustness_datasets.CIFAR):
     def __init__(self, data_path='../cifar10-challenge/cifar10_data'):
-        # Define transformations similar to MNISTDataset
-        transform_train = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5,))
+        transform = transforms.Compose([
+            #transforms.Resize((224, 224)),
+            transforms.ToTensor()
         ])
+
+        self.mean = [0.4914, 0.4822, 0.4465]
+        self.std = [0.2023, 0.1994, 0.2010]
+        self.normalize = transforms.Normalize(mean=self.mean, std=self.std)  # CIFAR-10 normalization
         
-        transform_test = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5,))
-        ])
-        
-        super().__init__(data_path=data_path, transform_train=transform_train, transform_test=transform_test)
+        super().__init__(data_path=data_path, transform_train=transform, transform_test=transform)
         self.ds_name = 'cifar'
 
 class ImageNetDataset:
     def __init__(self, data_path='path/to/imagenet'):
-        # Define transformations
         transform = transforms.Compose([
             transforms.Resize((224, 224)),
             transforms.ToTensor()
-            #
         ])
 
-        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        
         self.data = datasets.ImageFolder(root=f"{data_path}/train", transform=transform)
         self.val_data = datasets.ImageFolder(root=f"{data_path}/val", transform=transform)
         self.ds_name = 'imagenet'
         self.mean = torch.tensor([0.485, 0.456, 0.406])
         self.std = torch.tensor([0.229, 0.224, 0.225])
+        self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
 
     def make_loaders(self, workers=4, batch_size=100):
         train_loader = DataLoader(self.data, batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)

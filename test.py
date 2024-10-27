@@ -1,15 +1,13 @@
+import os
 import json
 import torch
-from detector import Detector  # Import the Detector class
-from robustness import attacker
-
-from torch.utils.tensorboard import SummaryWriter
-from model_utils import extract_patches
-from dataset_utils import get_dataset, denormalize_image
-from eval_utils import partial_auc
 import cv2
 import numpy as np
 from tqdm import tqdm
+from dataset_utils import get_dataset, denormalize_image
+from detector import Detector  # Import the Detector class
+from robustness import attacker
+from eval_utils import partial_auc, save_results
 
 def load_config(config_path):
     with open(config_path, 'r') as f:
@@ -28,6 +26,7 @@ def save_image(save, filename, image, dataset):
 
         # convert to BGR
         image_np = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
+        
         cv2.imwrite(filename, image_np)
 
 def setup_attack_kwargs(config):
@@ -48,12 +47,16 @@ if __name__ == "__main__":
 
     # General configuration
     dataset_name = config['dataset']
-    save_path = config.get("save_path", "models/detector_exp001")
-    patch_size = config.get("patch_size", 13)
+    save_path = "models/" + config['experiment_name']
+    results_folder = "results/" + config['experiment_name']
+    patch_size = config['patch_size']
 
     # Eval configuration
     n_samples = config['test']['samples']
     save = config['test']['save']
+
+    os.makedirs(results_folder, exist_ok=True)
+    os.makedirs(results_folder + "/img", exist_ok=True)
 
     # Setup attack parameters based on configuration
     attack_kwargs = setup_attack_kwargs(config)
@@ -61,15 +64,12 @@ if __name__ == "__main__":
     # Initialize the device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Initialize the Tensorboard writer
-    writer = SummaryWriter(comment=f"_{dataset_name}_l{attack_kwargs['constraint']}_{attack_kwargs['eps']}")
-
     # Get the dataset and create data loaders
     dataset = get_dataset(dataset_name)
     train_loader, test_loader = dataset.make_loaders(workers=4, batch_size=1)
 
     # Initialize the detector model
-    detector = Detector(10, dataset, patch_size=9, device=device)
+    detector = Detector(config['num_students'], dataset, patch_size=patch_size, device=device)
     detector.load(save_path)
 
     # Initialize attacker
@@ -96,13 +96,12 @@ if __name__ == "__main__":
 
         # Calculate the natural accuracy
         nat_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
-
+ 
         # Append the values to the anomaly score list
         e_list.append(regression_error)
         u_list.append(predictive_uncertainty)
 
-        save_image(save, f"results/{batch_idx}_nat.png", inputs[0].detach().cpu(), dataset)
-
+        save_image(save, results_folder + "/img/"+str(batch_idx) + "_nat.png", inputs[0].detach().cpu(), dataset)
 
         sample_count += 1
     
@@ -120,12 +119,6 @@ if __name__ == "__main__":
 
     # Calculate the top 1% quantile 
     threshold = torch.quantile(torch.tensor(as_list), 0.90).item()
-
-    # Log the top 1% quantiles to TensorBoard
-    writer.add_scalar('Detector Evaluation/threshold', threshold, 0)
-
-    # Log histograms of average and maximum standard deviations to TensorBoard
-    writer.add_histogram('Histograms/anomaly_score', torch.tensor(as_list), 0)
 
     # Initialize lists to store average and maximum standard deviations for adversarial examples
     adv_as_list = []
@@ -163,20 +156,17 @@ if __name__ == "__main__":
         if anomaly_score > threshold:
             accuracy += 1
 
-        save_image(save, f"results/"+str(batch_idx) + "_adv.png", adv_im[0].detach().cpu(), dataset)
+        save_image(save, results_folder + "/img/"+str(batch_idx) + "_adv.png", adv_im[0].detach().cpu(), dataset)
 
         sample_count += 1
 
-    writer.add_scalar('Classifier Evaluation/natural_accuracy', nat_accuracy, 0)
-    writer.add_scalar('Classifier Evaluation/adversarial_accuracy', adv_accuracy, 0)
-    
-    # Log the accuracy of adversarial examples to TensorBoard
-    writer.add_scalar('Detector Evaluation/accuracy', accuracy/n_samples, 0)
-
-    # Log histograms of average and maximum standard deviations for adversarial examples to TensorBoard
-    writer.add_histogram('Histograms/adv_anomaly_score', torch.tensor(adv_as_list), 0)
-
-    pAUC = partial_auc(as_list, adv_as_list)
-
-    # Log the partial AUC to TensorBoard
-    writer.add_scalar('Detector Evaluation/pAUC', pAUC, 0)
+    results = {
+        "nat_list": as_list,
+        "adv_list": adv_as_list,
+        "threshold": threshold,
+        "natural_accuracy": nat_accuracy,
+        "adversarial_accuracy": adv_accuracy,
+        "adversarial_detection_accuracy": accuracy / n_samples,
+        "pAUC": partial_auc(as_list, adv_as_list)
+    }
+    save_results(results_folder, results)

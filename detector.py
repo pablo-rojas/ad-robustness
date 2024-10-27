@@ -1,24 +1,13 @@
-import argparse
+import os
 import torch
 import torch.nn as nn
-import cv2
-import os
 
-from robustness import attacker, datasets
 from model_utils import extract_patches, initialize_model
-from dataset_utils import get_dataset
-from eval_utils import partial_auc
 
 
 class Detector(nn.Module):
     """
     A detector model that trains multiple student models to detect adversarial examples.
-
-    Args:
-        num_students (int): The number of student models.
-        attack_kwargs (dict): The keyword arguments for the attacker.
-        patch_size (int, optional): The size of the patches. Defaults to 5.
-        device (str, optional): The device to use for training. Defaults to 'cuda'.
 
     Attributes:
         patch_size (int): The size of the patches.
@@ -97,7 +86,7 @@ class Detector(nn.Module):
         # Accumulate losses from each student model
         total_loss = 0
         for student in self.students:
-            student_outputs = student(patches)
+            student_outputs = student(patches).squeeze()
             loss = self.criterion(student_outputs, teacher_outputs)
             total_loss += loss
 

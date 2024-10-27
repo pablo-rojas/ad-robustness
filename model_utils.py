@@ -47,10 +47,10 @@ class Patch17Descriptor(nn.Module):
         super(Patch17Descriptor, self).__init__()
 
         # Architecture for p = 17
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=128, kernel_size=5, stride=1, padding=2)
-        self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=5, stride=1, padding=2)
-        self.conv3 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=5, stride=1, padding=2)
-        self.conv4 = nn.Conv2d(in_channels=256, out_channels=128, kernel_size=4, stride=1)
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=128, kernel_size=5, stride=1)
+        self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=5, stride=1)
+        self.conv3 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=5, stride=1)
+        self.conv4 = nn.Conv2d(in_channels=256, out_channels=128, kernel_size=5, stride=1)
         self.decode = nn.Conv2d(in_channels=128, out_channels=512, kernel_size=1, stride=1)
         
         # Leaky ReLU with slope 5e-3
@@ -157,13 +157,18 @@ def initialize_model_cifar(num_students, dataset, resume_path='models/cifar_nat.
     teacher_model.eval()
 
     # Create the teacher feature extractor (removing the fully connected layer)
-    teacher_feature_extractor = torch.nn.Sequential(*list(teacher_model.children())[:8])
+    #teacher_feature_extractor = torch.nn.Sequential(*list(teacher_model.children())[:8])
+    #teacher_feature_extractor.eval()
+
+    # Create the teacher feature extractor (removing the fully connected layer)
+    aux_model = models.resnet18(pretrained=True)
+    teacher_feature_extractor = torch.nn.Sequential(*list(aux_model.children())[:8])
     teacher_feature_extractor.eval()
 
     # Initialize student models with random weights using the shallow network
     student_models = []
     for _ in range(num_students):
-        student_model = ShallowNet(num_channels=3)
+        student_model = Patch17Descriptor()
         student_models.append(student_model)
 
     return teacher_model, teacher_feature_extractor, student_models
@@ -195,14 +200,14 @@ def initialize_model_mnist(num_students, dataset, resume_path='models/mnist_nat.
     teacher_model.eval()
 
     # Create the teacher feature extractor (removing the fully connected layer)
-    teacher_feature_extractor = torch.nn.Sequential(*list(teacher_model.children())[:8])
-    teacher_feature_extractor
+    aux_model = models.resnet18(pretrained=True)
+    teacher_feature_extractor = torch.nn.Sequential(*list(aux_model.children())[:8])
     teacher_feature_extractor.eval()
 
      # Initialize student models with random weights using the shallow network
     student_models = []
     for _ in range(num_students):
-        student_model = ShallowNet(num_channels=3)
+        student_model = Patch17Descriptor()
         student_models.append(student_model)
 
     return teacher_model, teacher_feature_extractor, student_models
@@ -234,7 +239,7 @@ def initialize_model_imagenet(num_students, dataset):
      # Initialize student models with random weights using the shallow network
     student_models = []
     for _ in range(num_students):
-        student_model = ShallowNet(num_channels=3)
+        student_model = Patch17Descriptor()
         student_models.append(student_model)
 
     return teacher_model, teacher_feature_extractor, student_models

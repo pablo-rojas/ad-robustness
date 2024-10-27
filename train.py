@@ -1,10 +1,11 @@
 import json
 import torch
-from detector import Detector  # Import the Detector class
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+from detector import Detector  # Import the Detector class
 from model_utils import extract_patches
 from dataset_utils import get_dataset
-from tqdm import tqdm
 
 def load_config(config_path):
     with open(config_path, 'r') as f:
@@ -18,9 +19,9 @@ if __name__ == "__main__":
 
     # Parameters from JSON
     dataset_name = config['dataset']
-    save_path = config.get("save_path", "models/detector_exp002")
+    save_path = "models/" + config['experiment_name']
     steps = config['train']['steps']
-    patch_size = config.get("patch_size", 13)
+    patch_size = config['patch_size']
 
     # Initialize the device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -28,13 +29,12 @@ if __name__ == "__main__":
     # Initialize the Tensorboard writer
     writer = SummaryWriter(comment=f"_{dataset_name}")
 
-
     # Get the dataset and create data loaders
     dataset = get_dataset(dataset_name)
     train_loader, test_loader = dataset.make_loaders(workers=4, batch_size=1)
 
     # Initialize the detector model
-    detector = Detector(10, dataset, patch_size=9, device=device)
+    detector = Detector(config['num_students'], dataset, patch_size=patch_size, device=device)
 
     i = 0
     # Train the model for the specified number of epochs
