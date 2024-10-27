@@ -1,7 +1,7 @@
-import argparse
+import json
 import torch
 from detector import Detector  # Import the Detector class
-from robustness import attacker, datasets
+from robustness import attacker
 
 from torch.utils.tensorboard import SummaryWriter
 from model_utils import extract_patches
@@ -10,6 +10,12 @@ from eval_utils import partial_auc
 import cv2
 import numpy as np
 from tqdm import tqdm
+
+def load_config(config_path):
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    return config
+
 
 def save_image(save, filename, image, dataset):
     if save:
@@ -24,49 +30,33 @@ def save_image(save, filename, image, dataset):
         image_np = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
         cv2.imwrite(filename, image_np)
 
+def setup_attack_kwargs(config):
+    attack_kwargs = {
+        'constraint': config['test']['attacker']['constraint'],  # L-inf PGD
+        'eps': config['test']['attacker']['epsilon'],  # Epsilon constraint (L-inf norm)
+        'step_size': config['test']['attacker']['step_size'],  # Learning rate for PGD
+        'iterations': config['test']['attacker']['iterations'],  # Number of PGD steps
+        'targeted': config['test']['attacker']['targeted'],  # Targeted attack
+        'custom_loss': None  # Use default cross-entropy loss
+    }
+    return attack_kwargs
+
 if __name__ == "__main__":
 
-    # Argument parser setup
-    parser = argparse.ArgumentParser(description='Adversarial Example Generator')
-    parser.add_argument('--dataset', type=str, default='mnist', help='Dataset name')
-    parser.add_argument('--epsilon', type=float, default=0.1, help='Epsilon constraint (L-inf norm)')
-    parser.add_argument('--linf', type=bool, default=False, help='L-inf constraint (True) or L2 (False)')
-    parser.add_argument('--targeted', type=bool, default=False, help='Choose if the attack is targeted (True) or untargeted (False)')
-    parser.add_argument('--iterations', type=int, default=100, help='Number of PGD steps')
-    parser.add_argument('--epochs', type=int, default=10, help='Number of epochs to train')
-    args = parser.parse_args()
+    # Load configuration from JSON
+    config = load_config("cfg/config.json")
 
-    # Use parsed arguments
-    epsilon = args.epsilon
-    linf = args.linf
-    iterations = args.iterations
-    targeted = args.targeted
-    dataset_name = args.dataset
-    epochs = args.epochs
-    steps = 10000
-    patch_size = 9
-    save = True
-    n_samples = 10 # Number of samples to evaluate
+    # General configuration
+    dataset_name = config['dataset']
+    save_path = config.get("save_path", "models/detector_exp001")
+    patch_size = config.get("patch_size", 13)
 
-    # Setup attack parameters based on args
-    if linf:
-        attack_kwargs = {
-            'constraint': 'inf',  # L-inf PGD
-            'eps': epsilon,  # Epsilon constraint (L-inf norm)
-            'step_size': 0.01,  # Learning rate for PGD
-            'iterations': iterations,  # Number of PGD steps
-            'targeted': targeted,  # Targeted attack
-            'custom_loss': None  # Use default cross-entropy loss
-        }
-    else:
-        attack_kwargs = {
-            'constraint': '2',  # L2 PGD
-            'eps': epsilon,  # Epsilon constraint (L2 norm)
-            'step_size': 2.5 * epsilon / 100,  # Learning rate for PGD
-            'iterations': iterations,  # Number of PGD steps
-            'targeted': targeted,  # Targeted attack
-            'custom_loss': None  # Use default cross-entropy loss
-        }
+    # Eval configuration
+    n_samples = config['test']['samples']
+    save = config['test']['save']
+
+    # Setup attack parameters based on configuration
+    attack_kwargs = setup_attack_kwargs(config)
 
     # Initialize the device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -80,7 +70,7 @@ if __name__ == "__main__":
 
     # Initialize the detector model
     detector = Detector(10, dataset, patch_size=9, device=device)
-    detector.load("models/detector_exp000")
+    detector.load(save_path)
 
     # Initialize attacker
     attacker = attacker.Attacker(detector.teacher, dataset).to(device)

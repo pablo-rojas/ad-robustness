@@ -1,0 +1,19 @@
+{
+    "dataset": "imagenet",
+    "save_path": "models/detector_exp001",
+    "patch_size": 9,
+    "train": {
+        "steps": 50000
+    },
+    "test": {
+        "attacker": {
+            "epsilon": 0.1,
+            "constraint": "linf",
+            "targeted": false,
+            "iterations": 100,
+            "step_size": 0.01 
+        },
+        "samples": 20,
+        "save": true
+    }
+}

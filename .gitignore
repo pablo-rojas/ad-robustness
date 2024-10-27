@@ -20,3 +20,12 @@ venv/
 runs/
 models/
 results/
+
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.svg
