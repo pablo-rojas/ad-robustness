@@ -1,6 +1,6 @@
 {
-    "experiment_name": "detector_exp001",
-    "dataset": "mnist",
+    "experiment_name": "cifar_exp000",
+    "dataset": "cifar",
     "patch_size": 17,
     "num_students": 10,
     "train": {

@@ -1,6 +1,6 @@
 {
-    "experiment_name": "detector_exp001",
-    "dataset": "mnist",
+    "experiment_name": "imagenet_exp000",
+    "dataset": "imagenet",
     "patch_size": 17,
     "num_students": 10,
     "train": {

@@ -2,6 +2,7 @@ import json
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+import argparse
 
 from detector import Detector  # Import the Detector class
 from model_utils import extract_patches
@@ -14,8 +15,14 @@ def load_config(config_path):
 
 if __name__ == "__main__":
 
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Evaluate the detector model.")
+    parser.add_argument('--config', type=str, default='cfg/config.json', help='Path to the configuration file.')
+    args = parser.parse_args()
+
     # Load configuration from JSON
-    config = load_config("cfg/config.json")
+    config = load_config(args.config)
+
 
     # Parameters from JSON
     dataset_name = config['dataset']

@@ -1,5 +1,5 @@
 {
-    "experiment_name": "detector_exp001",
+    "experiment_name": "mnist_exp000",
     "dataset": "mnist",
     "patch_size": 17,
     "num_students": 10,

@@ -8,6 +8,7 @@ from dataset_utils import get_dataset, denormalize_image
 from detector import Detector  # Import the Detector class
 from robustness import attacker
 from eval_utils import partial_auc, save_results
+import argparse
 
 def load_config(config_path):
     with open(config_path, 'r') as f:
@@ -42,8 +43,13 @@ def setup_attack_kwargs(config):
 
 if __name__ == "__main__":
 
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Evaluate the detector model.")
+    parser.add_argument('--config', type=str, default='cfg/config.json', help='Path to the configuration file.')
+    args = parser.parse_args()
+
     # Load configuration from JSON
-    config = load_config("cfg/config.json")
+    config = load_config(args.config)
 
     # General configuration
     dataset_name = config['dataset']

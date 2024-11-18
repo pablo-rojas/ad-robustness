@@ -32,7 +32,7 @@ class Detector(nn.Module):
 
     def save(self, path):
         """
-        Saves the teacher and student models to the specified path.
+        Saves the teacher, teacher feature extractor, and student models to the specified path.
 
         Args:
             path (str): The directory where the models will be saved.
@@ -40,18 +40,20 @@ class Detector(nn.Module):
         if not os.path.exists(path):
             os.makedirs(path)
         torch.save(self.teacher.state_dict(), os.path.join(path, 'teacher.pth'))
+        torch.save(self.teacher_feature_extractor.state_dict(), os.path.join(path, 'teacher_feature_extractor.pth'))
         for idx, student in enumerate(self.students):
             torch.save(student.state_dict(), os.path.join(path, f'student_{idx}.pth'))
         print(f"Models saved to {path}")
 
     def load(self, path):
         """
-        Loads the teacher and student models from the specified path.
+        Loads the teacher, teacher feature extractor, and student models from the specified path.
 
         Args:
             path (str): The directory from where the models will be loaded.
         """
         self.teacher.load_state_dict(torch.load(os.path.join(path, 'teacher.pth')))
+        self.teacher_feature_extractor.load_state_dict(torch.load(os.path.join(path, 'teacher_feature_extractor.pth')))
         for idx, student in enumerate(self.students):
             student.load_state_dict(torch.load(os.path.join(path, f'student_{idx}.pth')))
         print(f"Models loaded from {path}")
