@@ -157,13 +157,13 @@ def initialize_model_cifar(num_students, dataset, resume_path='models/cifar_nat.
     teacher_model.eval()
 
     # Create the teacher feature extractor (removing the fully connected layer)
-    #teacher_feature_extractor = torch.nn.Sequential(*list(teacher_model.children())[:8])
-    #teacher_feature_extractor.eval()
+    teacher_feature_extractor = torch.nn.Sequential(*list(teacher_model.children())[:8])
+    teacher_feature_extractor.eval()
 
     # Create the teacher feature extractor (removing the fully connected layer)
-    aux_model = models.resnet18(pretrained=True)
-    teacher_feature_extractor = torch.nn.Sequential(*list(aux_model.children())[:8])
-    teacher_feature_extractor.eval()
+    # aux_model = models.resnet18(pretrained=True)
+    # teacher_feature_extractor = torch.nn.Sequential(*list(aux_model.children())[:8])
+    # teacher_feature_extractor.eval()
 
     # Initialize student models with random weights using the shallow network
     student_models = []
