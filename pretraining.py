@@ -51,7 +51,9 @@ def main(args):
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
+
 
     best_acc = 0.0
     best_model_wts = None
@@ -82,6 +84,9 @@ def main(args):
               f'Elapsed Time: {int(elapsed_hours):02}:{int(elapsed_minutes):02}:{int(elapsed_seconds):02}, '
               f'Estimated Time Left: {int(est_hours):02}:{int(est_minutes):02}:{int(est_seconds):02}')
 
+    # Update the learning rate scheduler
+    scheduler.step()
+
     # Save the best model checkpoint
     if best_model_wts is not None:
         model.load_state_dict(best_model_wts)
@@ -94,10 +99,12 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train ResNet18 on MNIST or CIFAR datasets')
     parser.add_argument('--dataset', type=str, choices=['mnist', 'cifar'], required=True, help='Dataset to use: mnist or cifar')
-    parser.add_argument('--batch_size', type=int, default=128, help='Batch size for training')
+    parser.add_argument('--batch_size', type=int, default=512, help='Batch size for training')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train')
-    parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
-    parser.add_argument('--workers', type=int, default=4, help='Number of data loading workers')
+    parser.add_argument('--lr', type=float, default=0.1, help='Learning rate')
+    parser.add_argument('--workers', type=int, default=8, help='Number of data loading workers')
+    parser.add_argument('--momentum', type=float, default=0.9, help='Momentum for SGD optimizer')
+    parser.add_argument('--weight_decay', type=float, default=5e-4, help='Weight decay for SGD optimizer')
 
     args = parser.parse_args()
     main(args)
