@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-from robustness.attacker import AttackerModel
 import torchvision.models as models
 
 def extract_patches(image, patch_size):

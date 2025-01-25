@@ -1,6 +1,6 @@
 {
-    "experiment_name": "imagenet_epsilon_0.3",
-    "dataset": "imagenet",
+    "experiment_name": "cifarv2_epsilon_0.3",
+    "dataset": "cifar",
     "patch_size": 17,
     "num_students": 10,
     "train": {
@@ -14,7 +14,7 @@
             "iterations": 100,
             "step_size": 0.01
         },
-        "samples": 1000,
+        "samples": 5000,
         "save": false
     }
 }

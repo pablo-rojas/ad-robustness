@@ -18,7 +18,7 @@ def save_config(experiment_name, dataset, epsilon):
                 "iterations": 100,
                 "step_size": 0.01
             },
-            "samples": 1000,
+            "samples": 5000,
             "save": False
         }
     }
@@ -26,17 +26,17 @@ def save_config(experiment_name, dataset, epsilon):
     with open("cfg/temp_config.json", "w") as json_file:
         json.dump(config, json_file, indent=4)
         
-datasets = ["imagenet"]
-epsilons = [0.1, 0.3]
+datasets = ["cifar"]
+epsilons = [0.05, 0.1, 0.3]
 
 total_experiments = len(datasets) * len(epsilons)
 i = 0
 for dataset in datasets:
     for epsilon in epsilons:
-        experiment_name = f"{dataset}_epsilon_{epsilon}"
+        experiment_name = f"{dataset}v2_epsilon_{epsilon}"
 
         print (f"Running experiment {experiment_name}, experiment number {i} out of {total_experiments}") 
         save_config(experiment_name, dataset, epsilon)
-        #os.system ("python train.py --config cfg/temp_config.json")
+        os.system ("python train.py --config cfg/temp_config.json")
         os.system ("python test.py --config cfg/temp_config.json")
         i +=1

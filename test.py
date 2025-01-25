@@ -4,10 +4,10 @@ import torch
 import cv2
 import numpy as np
 from tqdm import tqdm
-from dataset_utils import get_dataset, denormalize_image
-from detector import Detector  # Import the Detector class
+from src.dataset_utils import get_dataset, denormalize_image
+from src.detector import Detector  # Import the Detector class
 from robustness import attacker
-from eval_utils import partial_auc, save_results
+from src.eval_utils import partial_auc, save_results
 import argparse
 
 def load_config(config_path):

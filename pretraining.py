@@ -6,14 +6,15 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.models as models
+import torchvision.transforms as transforms
 
 from dataset_utils import get_dataset, get_loaders
 
-def train(model, train_loader, criterion, optimizer, norm, device):
+def train(model, train_loader, criterion, optimizer, trans, device):
     model.train()
     running_loss = 0.0
     for inputs, labels in train_loader:
-        inputs, labels = norm(inputs.to(device)), labels.to(device)
+        inputs, labels = trans(inputs.to(device)), labels.to(device)
 
         optimizer.zero_grad()
 
@@ -43,6 +44,11 @@ def main(args):
 
     dataset = get_dataset(args.dataset)
     norm = dataset.normalize
+    transform_train = transforms.Compose([
+    transforms.RandomCrop(32, padding=4),
+    transforms.RandomHorizontalFlip(),
+    norm
+])
     train_loader, test_loader = get_loaders(dataset, workers=args.workers, batch_size=args.batch_size)
 
     model = models.resnet18(pretrained=False)
@@ -52,8 +58,7 @@ def main(args):
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
-
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
     best_acc = 0.0
     best_model_wts = None
@@ -62,7 +67,7 @@ def main(args):
     for epoch in range(args.epochs):
         epoch_start_time = time.time()
         
-        train_loss = train(model, train_loader, criterion, optimizer, norm, device)
+        train_loss = train(model, train_loader, criterion, optimizer, transform_train, device)
         test_loss, test_acc = test(model, test_loader, criterion, norm, device)
         
         if test_acc >= best_acc:
@@ -84,8 +89,8 @@ def main(args):
               f'Elapsed Time: {int(elapsed_hours):02}:{int(elapsed_minutes):02}:{int(elapsed_seconds):02}, '
               f'Estimated Time Left: {int(est_hours):02}:{int(est_minutes):02}:{int(est_seconds):02}')
 
-    # Update the learning rate scheduler
-    scheduler.step()
+        # Update the learning rate scheduler
+        scheduler.step()
 
     # Save the best model checkpoint
     if best_model_wts is not None:
@@ -100,7 +105,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train ResNet18 on MNIST or CIFAR datasets')
     parser.add_argument('--dataset', type=str, choices=['mnist', 'cifar'], required=True, help='Dataset to use: mnist or cifar')
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size for training')
-    parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train')
+    parser.add_argument('--epochs', type=int, default=2000, help='Number of epochs to train')
     parser.add_argument('--lr', type=float, default=0.1, help='Learning rate')
     parser.add_argument('--workers', type=int, default=8, help='Number of data loading workers')
     parser.add_argument('--momentum', type=float, default=0.9, help='Momentum for SGD optimizer')

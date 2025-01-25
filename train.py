@@ -4,9 +4,9 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import argparse
 
-from detector import Detector  # Import the Detector class
-from model_utils import extract_patches
-from dataset_utils import get_dataset
+from src.detector import Detector
+from src.model_utils import extract_patches
+from src.dataset_utils import get_dataset
 
 def load_config(config_path):
     with open(config_path, 'r') as f:
