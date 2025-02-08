@@ -6,17 +6,17 @@ import argparse
 import random
 import numpy as np
 from tqdm import tqdm
-
-# Import your dataset class from your code
-from src.dataset_utils import get_dataset
-# Import ACGAN modules from the ACGAN folder
-from ACGAN.CNN.resnet import ResNet18
-from ACGAN.GAN.acgan_1 import ACGAN
-
-# Use the pretrained ResNet18 from torchvision
+from torch import nn
 import torchvision.models as models
 
-# Import the PGD attacker from the robustness package
+# Import dataset and evaluation utilities.
+from src.dataset_utils import get_dataset
+from src.eval_utils import partial_auc, save_results
+
+# Import ACGAN modules.
+from ACGAN.GAN.acgan_1 import ACGAN
+
+# Import PGD attacker.
 from robustness import attacker
 
 def load_config(config_path):
@@ -29,7 +29,7 @@ def setup_attack_kwargs(config):
     Set up PGD attack parameters based on the configuration.
     """
     attack_kwargs = {
-        'constraint': config['test']['attacker']['constraint'],  # e.g., 'linf'
+        'constraint': config['test']['attacker']['constraint'],
         'eps': config['test']['attacker']['epsilon'],
         'step_size': config['test']['attacker']['step_size'],
         'iterations': config['test']['attacker']['iterations'],
@@ -40,7 +40,7 @@ def setup_attack_kwargs(config):
 
 def get_target(labels):
     """
-    Choose a target class that is different from the true label.
+    Choose a target class different from the true label.
     """
     a = random.randint(0, 9)
     while a == labels[0]:
@@ -48,8 +48,10 @@ def get_target(labels):
     return torch.tensor([a])
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Test ACGAN with PGD adversarial attack")
-    parser.add_argument('--config', type=str, default='cfg/config_acgan.json',
+    parser = argparse.ArgumentParser(
+        description="Test ACGAN with PGD adversarial attack and compute anomaly score metrics"
+    )
+    parser.add_argument('--config', type=str, default='cfg/cifar_config_acgan.json',
                         help='Path to the configuration file.')
     args = parser.parse_args()
 
@@ -57,21 +59,29 @@ if __name__ == "__main__":
     dataset_name = config['dataset']
     experiment_name = config['experiment_name']
 
-    # Directory where the trained models are saved.
+    # Directories for models and results.
     model_dir = os.path.join("models", experiment_name)
+    results_dir = os.path.join("results", experiment_name)
+    os.makedirs(results_dir, exist_ok=True)
 
+    # Use GPU for the classification network and PGD attacker.
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Load your dataset; use a batch size of 100 for splitting, then create a per-sample loader.
+    # Load the dataset and create a per-sample loader.
     dataset = get_dataset(dataset_name)
-    _, test_dataset = dataset.make_loaders(workers=4, batch_size=100)
+    _, test_dataset = dataset.make_loaders(workers=4, batch_size=32)
     test_loader = torch.utils.data.DataLoader(test_dataset.dataset, batch_size=1, shuffle=True)
 
-    # Use the pretrained ResNet18 from the PyTorch model hub.
-    model = models.resnet18(pretrained=True).to(device)
+    # Load the pretrained ResNet18 classifier.
+    model = models.resnet18(pretrained=False)
+    model.fc = nn.Linear(model.fc.in_features, 10)  # For CIFAR-10.
+    model_weights_path = os.path.join('models', 'resnet18_cifar.pth')
+    model.load_state_dict(torch.load(model_weights_path))
+    model.to(device)
     model.eval()
-    im_channel = 3
 
+    # Initialize ACGAN.
+    im_channel = 3
     gan = ACGAN(
         in_dim=50,
         class_dim=10,
@@ -81,62 +91,125 @@ if __name__ == "__main__":
         d_strides=[2, 1, 2, 1, 2, 1],
         CNN=model
     )
-
-    # Load the previously saved generator and discriminator.
     gan.load_model(model_dir)
     gan.generator.eval()
     gan.discriminator.eval()
 
-    # Set up PGD attack parameters.
+    # Set up PGD attacker.
     attack_kwargs = setup_attack_kwargs(config)
     pgd_attacker = attacker.Attacker(model, dataset).to(device)
 
-    clean_losses = []
-    adv_losses = []
-    total = 0
-    correct = 0
+    num_test_samples = config['test']['samples']
 
-    print("Starting ACGAN adversarial evaluation using PGD ...")
-    for i, (images, labels) in enumerate(tqdm(test_loader, desc="Evaluating")):
-        images, labels = images.to(device), labels.to(device)
+    # -------------------------------
+    # 1. Natural (clean) evaluation loop.
+    # -------------------------------
+    nat_scores = []  # Will store anomaly scores for clean images.
+    nat_total = 0
+    nat_correct = 0
 
-        # Only process images that the model correctly classifies.
-        outputs = model(images)
+    print("Starting evaluation on natural (clean) images ...")
+    for i, (images, labels) in enumerate(tqdm(test_loader, desc="Natural Evaluation", total=num_test_samples)):
+        #images = dataset.normalize(images.to(device))
+        # For classification, move inputs to GPU.
+        outputs = model(dataset.normalize(images.to(device))) # added norm
         _, pred = outputs.max(1)
-        if pred.item() != labels.item():
-            continue
-        total += 1
+        nat_total += 1
+        if pred.item() == labels.to(device).item():
+            nat_correct += 1
 
-        # Compute reconstruction loss on the clean image.
-        _, loss_info = gan.reconstruct_loss(images, labels, lr=0.01, steps=100)
-        clean_losses.append(loss_info[0])
+        # For anomaly scoring, use GAN's discriminator.
+        # Ensure the inputs are on CPU since ACGAN methods require CPU.
+        with torch.no_grad():
+            aux_prob, aux_out = gan.discriminator(images.to(device))
+        # Compute the anomaly score using the true label.
+        true_label = labels.item()
+        anomaly_score = torch.log(aux_prob) + torch.log(aux_out[:, true_label])
+        nat_scores.append(anomaly_score.item())
 
-        # Generate a target label (different from the true label) and create an adversarial example.
-        target_label = get_target(labels).to(device)
-        adv_images = pgd_attacker(images, target_label, True, **attack_kwargs)
-        # Optionally normalize the adversarial images using your dataset's normalization.
-        adv_images = dataset.normalize(adv_images)
-
-        # Pass the adversarial image through the discriminator and check its auxiliary prediction.
-        _, aux_out = gan.discriminator(adv_images)
-        _, aux_pred = aux_out.max(1)
-        if aux_pred.item() == labels.item():
-            correct += 1
-
-        # Compute the reconstruction loss on the adversarial image.
-        _, loss_info_adv = gan.reconstruct_loss(adv_images, target_label, lr=0.01, steps=100)
-        adv_losses.append(loss_info_adv[0])
-
-        if i >= config.get("num_test_samples", 400):
+        if nat_total >= num_test_samples:
             break
 
-    adv_det_acc = (correct / total * 100) if total > 0 else 0
-    print(f"Processed {total} samples.")
-    print(f"Adversarial detection (discriminator auxiliary) accuracy: {adv_det_acc:.2f}%")
+    nat_accuracy = (nat_correct / nat_total * 100) if nat_total > 0 else 0
 
-    # Save the clean and adversarial loss values for further analysis.
-    results_dir = os.path.join("results", experiment_name)
-    os.makedirs(results_dir, exist_ok=True)
-    np.save(os.path.join(results_dir, "clean_loss.npy"), np.array(clean_losses))
-    np.save(os.path.join(results_dir, "adv_loss.npy"), np.array(adv_losses))
+    nat_scores = np.array(nat_scores)
+    nat_scores[np.isneginf(nat_scores)] = -25
+    nat_scores = -nat_scores  # Invert the scores for adversarial images.
+
+    # Calculate the top 1% quantile 
+    threshold = torch.quantile(torch.tensor(nat_scores), 0.90).item()
+
+    # -------------------------------
+    # 2. Adversarial evaluation loop.
+    # -------------------------------
+    adv_scores = []  # Will store anomaly scores for adversarial images.
+    adv_total = 0
+    adv_correct = 0
+
+    print("Starting evaluation on adversarial images ...")
+    for i, (images, labels) in enumerate(tqdm(test_loader, desc="Adversarial Evaluation", total=num_test_samples)):
+        outputs = model(dataset.normalize(images.to(device)))
+        _, pred = outputs.max(1)
+        # Only consider images that are correctly classified.
+        #if pred.item() != labels.to(device).item():
+        #    continue
+        adv_total += 1
+
+        # Generate a target label (different from the true label).
+        target_label = get_target(labels)
+
+        # Generate adversarial examples using the PGD attacker.
+        adv_images = pgd_attacker(images.to(device), target_label.to(device), True, **attack_kwargs)
+        # Optionally normalize the adversarial images.
+
+        # Compute classification accuracy on adversarial images (using the classifier on GPU).
+        outputs_adv = model(dataset.normalize(adv_images).to(device))
+        _, pred_adv = outputs_adv.max(1)
+        if pred_adv.item() == labels.to(device).item():
+            adv_correct += 1
+
+        aux_prob, aux_out = gan.discriminator(adv_images)
+        anomaly_score_adv = torch.log(aux_prob) + torch.log(aux_out[:, target_label.item()])
+        adv_scores.append(anomaly_score_adv.item())
+
+        if adv_total >= num_test_samples:
+            break
+
+    adv_accuracy = (adv_correct / adv_total * 100) if adv_total > 0 else 0
+
+    # Normalize adversarial anomaly scores using natural score statistics.
+    adv_scores = np.array(adv_scores)
+    adv_scores[np.isneginf(adv_scores)] = -25
+    adv_scores = -adv_scores  # Invert the scores for adversarial images.
+
+    # -------------------------------
+    # 3. Compute detection metrics.
+    # -------------------------------
+    # Use the 90th percentile of normalized natural anomaly scores as the threshold.
+    detected_adv = np.sum(adv_scores > threshold)
+    adv_detection_accuracy = (detected_adv / len(adv_scores) * 100) if len(adv_scores) > 0 else 0
+
+    # Compute partial AUC (pAUC) using the provided utility.
+    pAUC = partial_auc( nat_scores.tolist(), adv_scores.tolist())
+
+    # -------------------------------
+    # 4. Save and display results.
+    # -------------------------------
+    results = {
+        "nat_list": nat_scores.tolist(),
+        "adv_list": adv_scores.tolist(),
+        "threshold": threshold,
+        "natural_accuracy": nat_accuracy,
+        "adversarial_accuracy": adv_accuracy,
+        "adversarial_detection_accuracy": adv_detection_accuracy,
+        "pAUC": pAUC
+    }
+    save_results(results_dir, results, range=(0, 25))
+
     print(f"Results saved in {results_dir}")
+    print("Detailed results:")
+    print(f"  Natural Accuracy: {nat_accuracy:.2f}%")
+    print(f"  Adversarial Accuracy: {adv_accuracy:.2f}%")
+    print(f"  Adversarial Detection Accuracy: {adv_detection_accuracy:.2f}%")
+    print(f"  Threshold (90th percentile): {threshold:.4f}")
+    print(f"  Partial AUC: {pAUC:.4f}")

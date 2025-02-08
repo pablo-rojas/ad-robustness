@@ -4,7 +4,6 @@ import json
 import torch
 import argparse
 from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
 from torch import nn
 
 # Import your dataset class from your own code
@@ -47,6 +46,7 @@ if __name__ == "__main__":
 
     # Load the model weights
     model.load_state_dict(torch.load('models/resnet18_cifar.pth'))
+    model.to(device)
     model.eval()
     im_channel = 3  # resnet18 expects 3-channel images
 
@@ -60,12 +60,9 @@ if __name__ == "__main__":
         CNN=model
     )
 
-    # Optionally, set up Tensorboard logging.
-    writer = SummaryWriter(comment=f"_ACGAN_{dataset_name}")
-
     print("Starting ACGAN training ...")
     # The gan.train() method internally loops over epochs and batches.
-    gan.train(train_loader, lr=config.get("lr", 0.0002),
+    gan.train(train_loader, dataset.normalize, lr=config.get("lr", 0.0002),
               num_epochs=config.get("num_epochs", 100), test_loader=test_loader)
 
     # Save the generator and discriminator models after training.

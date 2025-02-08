@@ -114,6 +114,7 @@ def partial_auc(anomaly_free_scores, anomalous_scores, fpr_threshold=0.2):
     y_true = np.array([0] * len(anomaly_free_scores) + [1] * len(anomalous_scores))
     y_scores = np.array(anomaly_free_scores + anomalous_scores)
     
+
     # Calculate the ROC curve
     fpr, tpr, _ = roc_curve(y_true, y_scores)
     
