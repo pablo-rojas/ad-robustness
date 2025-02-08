@@ -1,8 +1,10 @@
 import os
 import json
-import numpy as np
-from eval_utils import partial_auc, save_results, save_histogram, save_cdf, save_roc_curve, save_inv_cdf
 import argparse
+from eval_utils import save_histogram, save_cdf, save_roc_curve, save_inv_cdf
+import numpy as np
+
+from eval_utils import save_histogram, save_cdf, save_roc_curve, save_inv_cdf
 
 def load_config(config_path):
     with open(config_path, 'r') as f:

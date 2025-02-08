@@ -82,7 +82,7 @@ class ImageNetDataset:
 
     def make_loaders(self, workers=4, batch_size=100):
         train_loader = DataLoader(self.data, batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
-        val_loader = DataLoader(self.val_data, batch_size=batch_size, shuffle=False, num_workers=workers, pin_memory=True)
+        val_loader = DataLoader(self.val_data, batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
         return train_loader, val_loader
 
 def get_loaders(dataset, workers=4, batch_size=100):
