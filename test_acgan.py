@@ -75,7 +75,7 @@ if __name__ == "__main__":
     # Load the pretrained ResNet18 classifier.
     model = models.resnet18(pretrained=False)
     model.fc = nn.Linear(model.fc.in_features, 10)  # For CIFAR-10.
-    model_weights_path = os.path.join('models', 'resnet18_cifar.pth')
+    model_weights_path = os.path.join('models', 'cifar_epsilon_0.1/teacher.pth')#'resnet18_cifar.pth')
     model.load_state_dict(torch.load(model_weights_path))
     model.to(device)
     model.eval()
@@ -99,38 +99,32 @@ if __name__ == "__main__":
     attack_kwargs = setup_attack_kwargs(config)
     pgd_attacker = attacker.Attacker(model, dataset).to(device)
 
-    num_test_samples = config['test']['samples']
+    n_samples = config['test']['samples']
 
     # -------------------------------
     # 1. Natural (clean) evaluation loop.
     # -------------------------------
     nat_scores = []  # Will store anomaly scores for clean images.
-    nat_total = 0
-    nat_correct = 0
+    nat_accuracy = 0
 
     print("Starting evaluation on natural (clean) images ...")
-    for i, (images, labels) in enumerate(tqdm(test_loader, desc="Natural Evaluation", total=num_test_samples)):
+    for i, (images, labels) in enumerate(tqdm(test_loader, desc="Natural Evaluation", total=n_samples)):
         #images = dataset.normalize(images.to(device))
         # For classification, move inputs to GPU.
-        outputs = model(dataset.normalize(images.to(device))) # added norm
-        _, pred = outputs.max(1)
-        nat_total += 1
-        if pred.item() == labels.to(device).item():
-            nat_correct += 1
+        y = model(dataset.normalize(images.to(device))).detach().cpu()
+        nat_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
 
         # For anomaly scoring, use GAN's discriminator.
         # Ensure the inputs are on CPU since ACGAN methods require CPU.
-        with torch.no_grad():
-            aux_prob, aux_out = gan.discriminator(images.to(device))
+        aux_prob, aux_out = gan.discriminator(images.to(device))
+
         # Compute the anomaly score using the true label.
         true_label = labels.item()
         anomaly_score = torch.log(aux_prob) + torch.log(aux_out[:, true_label])
         nat_scores.append(anomaly_score.item())
 
-        if nat_total >= num_test_samples:
+        if i >= n_samples:
             break
-
-    nat_accuracy = (nat_correct / nat_total * 100) if nat_total > 0 else 0
 
     nat_scores = np.array(nat_scores)
     nat_scores[np.isneginf(nat_scores)] = -25
@@ -143,17 +137,15 @@ if __name__ == "__main__":
     # 2. Adversarial evaluation loop.
     # -------------------------------
     adv_scores = []  # Will store anomaly scores for adversarial images.
-    adv_total = 0
-    adv_correct = 0
+    adv_accuracy = 0
 
     print("Starting evaluation on adversarial images ...")
-    for i, (images, labels) in enumerate(tqdm(test_loader, desc="Adversarial Evaluation", total=num_test_samples)):
-        outputs = model(dataset.normalize(images.to(device)))
-        _, pred = outputs.max(1)
+    for i, (images, labels) in enumerate(tqdm(test_loader, desc="Adversarial Evaluation", total=n_samples)):
+        #outputs = model(dataset.normalize(images.to(device)))
+        #_, pred = outputs.max(1)
         # Only consider images that are correctly classified.
         #if pred.item() != labels.to(device).item():
         #    continue
-        adv_total += 1
 
         # Generate a target label (different from the true label).
         target_label = get_target(labels)
@@ -163,19 +155,15 @@ if __name__ == "__main__":
         # Optionally normalize the adversarial images.
 
         # Compute classification accuracy on adversarial images (using the classifier on GPU).
-        outputs_adv = model(dataset.normalize(adv_images).to(device))
-        _, pred_adv = outputs_adv.max(1)
-        if pred_adv.item() == labels.to(device).item():
-            adv_correct += 1
+        y = model(dataset.normalize(adv_images).to(device)).detach().cpu()
+        adv_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
 
         aux_prob, aux_out = gan.discriminator(adv_images)
         anomaly_score_adv = torch.log(aux_prob) + torch.log(aux_out[:, target_label.item()])
         adv_scores.append(anomaly_score_adv.item())
 
-        if adv_total >= num_test_samples:
+        if i >= n_samples:
             break
-
-    adv_accuracy = (adv_correct / adv_total * 100) if adv_total > 0 else 0
 
     # Normalize adversarial anomaly scores using natural score statistics.
     adv_scores = np.array(adv_scores)

@@ -9,7 +9,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from src.dataset_utils import get_dataset, denormalize_image
-from src.model_utils import initialize_model
+from architectures import initialize_model
 from robustness import attacker
 
 

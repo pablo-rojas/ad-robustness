@@ -5,7 +5,7 @@ from tqdm import tqdm
 import argparse
 
 from src.detector import Detector
-from src.model_utils import extract_patches
+from model_utils import extract_patches
 from src.dataset_utils import get_dataset
 
 def load_config(config_path):

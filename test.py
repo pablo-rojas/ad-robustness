@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Evaluate the detector model.")
-    parser.add_argument('--config', type=str, default='cfg/config.json', help='Path to the configuration file.')
+    parser.add_argument('--config', type=str, default='cfg/cifar_config.json', help='Path to the configuration file.')
     args = parser.parse_args()
 
     # Load configuration from JSON
@@ -89,7 +89,7 @@ if __name__ == "__main__":
 
     # Iterate over the test data loader with a progress bar
     sample_count = 0
-    for batch_idx, (inputs, labels) in enumerate(tqdm(test_loader, desc="Evaluating the detector model on natural images", total=n_samples)):
+    for batch_idx, (inputs, label) in enumerate(tqdm(test_loader, desc="Evaluating the detector model on natural images", total=n_samples)):
         if sample_count >= n_samples:
             break
         inputs = dataset.normalize(inputs.to(device))
@@ -101,7 +101,7 @@ if __name__ == "__main__":
         y = detector.teacher(inputs).detach().cpu()
 
         # Calculate the natural accuracy
-        nat_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
+        nat_accuracy += (y.argmax(1) == label).sum().item()/n_samples
  
         # Append the values to the anomaly score list
         e_list.append(regression_error)
@@ -147,7 +147,7 @@ if __name__ == "__main__":
         y = detector.teacher(adv_im).detach().cpu()
 
         # Calculate the natural accuracy
-        adv_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
+        adv_accuracy += (y.argmax(1) == label).sum().item()/n_samples
         
         # Forward pass through the model to obtain standard deviation map for adversarial examples
         regression_error, predictive_uncertainty = detector.forward(adv_im)

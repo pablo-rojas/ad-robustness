@@ -1,5 +1,5 @@
 {
-    "experiment_name": "cifar_exp000",
+    "experiment_name": "cifar_epsilon_0.1",
     "dataset": "cifar",
     "patch_size": 17,
     "num_students": 10,

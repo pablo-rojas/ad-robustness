@@ -66,7 +66,7 @@ class CIFARDataset(robustness_datasets.CIFAR):
         super().__init__(data_path=data_path, transform_train=transform, transform_test=transform)
         self.ds_name = 'cifar'
 
-class ImageNetDataset:
+class ImageNetDataset(Dataset):
     def __init__(self, data_path='path/to/imagenet'):
         transform = transforms.Compose([
             transforms.Resize((224, 224)),

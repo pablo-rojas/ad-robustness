@@ -1,8 +1,7 @@
 import os
 import torch
 import torch.nn as nn
-
-from model_utils import extract_patches, initialize_model
+from src.model_utils import extract_patches, initialize_model
 
 
 class Detector(nn.Module):
@@ -29,7 +28,7 @@ class Detector(nn.Module):
         self.to(device)
         print("Teacher: " + str(self.teacher_feature_extractor))
         print("Students: " + str(self.students))
-
+    
     def save(self, path):
         """
         Saves the teacher, teacher feature extractor, and student models to the specified path.
@@ -43,6 +42,21 @@ class Detector(nn.Module):
         torch.save(self.teacher_feature_extractor.state_dict(), os.path.join(path, 'teacher_feature_extractor.pth'))
         for idx, student in enumerate(self.students):
             torch.save(student.state_dict(), os.path.join(path, f'student_{idx}.pth'))
+        
+        # Save extra variables if they exist.
+        extra_vars = {}
+        if hasattr(self, 'e_mean'):
+            extra_vars['e_mean'] = self.e_mean
+        if hasattr(self, 'e_std'):
+            extra_vars['e_std'] = self.e_std
+        if hasattr(self, 'v_mean'):
+            extra_vars['v_mean'] = self.v_mean
+        if hasattr(self, 'v_std'):
+            extra_vars['v_std'] = self.v_std
+
+        if extra_vars:
+            torch.save(extra_vars, os.path.join(path, 'extra_vars.pth'))
+
         print(f"Models saved to {path}")
 
     def load(self, path):
@@ -56,6 +70,14 @@ class Detector(nn.Module):
         self.teacher_feature_extractor.load_state_dict(torch.load(os.path.join(path, 'teacher_feature_extractor.pth')))
         for idx, student in enumerate(self.students):
             student.load_state_dict(torch.load(os.path.join(path, f'student_{idx}.pth')))
+        
+        # Load extra variables if the file exists.
+        extra_vars_path = os.path.join(path, 'extra_vars.pth')
+        if os.path.exists(extra_vars_path):
+            extra_vars = torch.load(extra_vars_path)
+            for key, value in extra_vars.items():
+                setattr(self, key, value)
+
         print(f"Models loaded from {path}")
 
     def to(self, device):
@@ -70,7 +92,6 @@ class Detector(nn.Module):
         self.teacher_feature_extractor.to(device)
         for student in self.students:
             student.to(device)
-
 
     def train_patch(self, patches):
         """
