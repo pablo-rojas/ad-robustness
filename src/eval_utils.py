@@ -2,9 +2,14 @@ import numpy as np
 from sklearn.metrics import roc_curve, auc
 
 import os
+import cv2
+import json
 import torch
+import random
 import numpy as np
 import matplotlib.pyplot as plt
+
+from src.dataset_utils import denormalize_image
 
 def save_results(save_folder, results, range=(-3, 17), bins=100):    
     # Ensure the save directory exists
@@ -24,10 +29,25 @@ def save_results(save_folder, results, range=(-3, 17), bins=100):
     # Plot and save ROC curve
     save_roc_curve(save_folder, results['nat_list'], results['adv_list'])
 
-    # Save scalar values to results.txt
+    # Save scalar values to results.txt, excluding list values
     with open(os.path.join(save_folder, "results.txt"), "w") as f:
         for key, value in results.items():
-            f.write(f"{key}: {value}\n")
+            if key not in ['adv_list', 'nat_list']:
+                f.write(f"{key}: {value}\n")
+
+def save_image(save, filename, image, dataset):
+    if save:
+        # Denormalize the first input image in the batch
+        image = denormalize_image(image, dataset)  # Apply denormalization
+            
+        # Convert the tensor back to (H, W, C) format and scale to [0, 255]
+        image_np = image.permute(1, 2, 0).numpy()  # Convert to (H, W, C) format
+        image_np = np.clip(image_np * 255.0, 0, 255).astype(np.uint8)  # Scale and convert to uint8
+
+        # convert to BGR
+        image_np = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
+        
+        cv2.imwrite(filename, image_np)
 
 def save_histogram(save_folder, nat_list, adv_list, range=(-3, 17), bins=100):
     plt.figure(figsize=(10, 6))
@@ -129,3 +149,32 @@ def partial_auc(anomaly_free_scores, anomalous_scores, fpr_threshold=0.2):
     pAUC = auc(fpr_restricted, tpr_restricted)
     
     return pAUC
+
+def get_target(labels):
+    """
+    Choose a target class different from the true label.
+    """
+    a = random.randint(0, 9)
+    while a == labels[0]:
+        a = random.randint(0, 9)
+    return torch.tensor([a])
+
+def load_config(config_path):
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    return config
+
+def setup_attack_kwargs(config):
+    """
+    Set up PGD attack parameters based on the configuration.
+    """
+    if config['type'] == 'pgd':
+        attack_kwargs = {
+            'constraint': config['constraint'],
+            'eps': config['epsilon'],
+            'step_size': 2.5 * config['epsilon'] / config['iterations'], #config['step_size'],    # Modification to imitate original PGD paper
+            'iterations': config['iterations'],
+            'targeted': config['targeted'],
+            'custom_loss': None
+        }
+    return attack_kwargs

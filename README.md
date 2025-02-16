@@ -30,10 +30,6 @@ from torch.hub import load_state_dict_from_url
 ```
 ├── cfg/
 │   └── ..
-├── dataset_utils.py
-├── detector.py
-├── eval_utils.py
-├── model_utils.py
 ├── models/
 │   └── ...
 ├── pretraining.py
@@ -44,6 +40,12 @@ from torch.hub import load_state_dict_from_url
 ├── run.sh
 ├── runs/
 │   └── ...
+├── src/
+│   ├── architectures.py
+│   ├── dataset_utils.py
+│   ├── detector.py
+│   ├── eval_utils.py
+│   └── model_utils.py
 ├── test.py
 └── train.py
 ```

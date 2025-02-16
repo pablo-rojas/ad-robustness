@@ -10,6 +10,7 @@ from torch import nn
 from src.dataset_utils import get_dataset
 # Import the CNN and ACGAN definitions from the ACGAN folder
 from ACGAN.GAN.acgan_1 import ACGAN
+from ACGAN.GAN.acgan_res import ACGAN_Res
 
 # For the pretrained resnet18 model from the PyTorch model hub
 import torchvision.models as models
@@ -25,9 +26,9 @@ if __name__ == "__main__":
                         help='Path to the configuration file.')
     args = parser.parse_args()
 
-    config = load_config(args.config)
-    dataset_name = config['dataset']         # e.g. "mnist" or "cifar"
-    experiment_name = config['experiment_name']
+    #config = load_config(args.config)
+    dataset_name = 'cifar'        # e.g. "mnist" or "cifar"
+    experiment_name = 'cifar_acgan'
 
     # Create directory for saving the trained model
     save_path = os.path.join("models", experiment_name)
@@ -35,7 +36,7 @@ if __name__ == "__main__":
 
     # Load your dataset using your own dataset class; fixed batch size=100.
     dataset = get_dataset(dataset_name)
-    train_loader, test_loader = dataset.make_loaders(workers=4, batch_size=32)
+    train_loader, test_loader = dataset.make_loaders(workers=4, batch_size=256)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -49,8 +50,11 @@ if __name__ == "__main__":
     model.to(device)
     model.eval()
     im_channel = 3  # resnet18 expects 3-channel images
+    in_dim = 500
+    class_dim = 10
 
-    gan = ACGAN(
+    if (dataset_name == 'mnist'):
+         gan = ACGAN(
         in_dim=50,
         class_dim=10,
         g_filters=[384, 192, 96, 48, im_channel],
@@ -59,11 +63,14 @@ if __name__ == "__main__":
         d_strides=[2, 1, 2, 1, 2, 1],
         CNN=model
     )
+    else:
+        gan = ACGAN_Res(in_dim=in_dim, class_dim=class_dim, CNN=model)
+
+   
 
     print("Starting ACGAN training ...")
     # The gan.train() method internally loops over epochs and batches.
-    gan.train(train_loader, dataset.normalize, lr=config.get("lr", 0.0002),
-              num_epochs=config.get("num_epochs", 100), test_loader=test_loader)
+    gan.train(train_loader, lr=0.0002, num_epochs=90)
 
     # Save the generator and discriminator models after training.
     gan.save_model(save_path)

@@ -1,0 +1,10 @@
+{
+    "experiment_name": "benchmark_best_classifier",
+    "model_path": "models/cifar_ccus",
+    "dataset": "cifar",
+    "patch_size": 17,
+    "num_students": 10,
+    "train": {
+        "steps": 500000
+    }
+}

@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 from src.dataset_utils import get_dataset, denormalize_image
-from src.detector import Detector  # Import the Detector class
+from src.detector import UninformedStudents  # Import the Detector class
 from robustness import attacker
 from src.eval_utils import partial_auc, save_results
 import argparse
@@ -75,7 +75,7 @@ if __name__ == "__main__":
     train_loader, test_loader = dataset.make_loaders(workers=4, batch_size=1)
 
     # Initialize the detector model
-    detector = Detector(config['num_students'], dataset, patch_size=patch_size, device=device)
+    detector = UninformedStudents(config['num_students'], dataset, patch_size=patch_size, device=device)
     detector.load(save_path)
 
     # Initialize attacker

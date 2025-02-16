@@ -39,10 +39,10 @@ def singe_discriminator_statistic(discriminator_output, target_label):
         torch.Tensor: The extracted patches.
     """
     aux_prob, aux_out = discriminator_output
-    s_d = -torch.log(aux_prob) + torch.log(aux_out[:, target_label])
-    if torch.isinf(s_d).any():
+    s_d = torch.log(aux_prob) + torch.log(aux_out[:, target_label])
+    if torch.isneginf(s_d).any():
         return torch.tensor(100.0, device=s_d.device)
-    return s_d
+    return -s_d
 
 def initialize_model_cifar(num_students, dataset, resume_path='models/cifar_nat.pt'):
     """
