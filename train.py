@@ -41,8 +41,8 @@ if __name__ == "__main__":
     train_loader, test_loader = dataset.make_loaders(workers=4, batch_size=1)
 
     # Initialize the detector model
-    #detector = UninformedStudents(config['num_students'], dataset, patch_size=patch_size, device=device)
-    detector = ClassConditionalUninformedStudents(config['num_students'], dataset, patch_size=patch_size, device=device)
+    detector = UninformedStudents(config['num_students'], dataset, patch_size=patch_size, device=device)
+    #detector = ClassConditionalUninformedStudents(config['num_students'], dataset, patch_size=patch_size, device=device)
 
     i = 0
     # Train the model for the specified number of epochs
