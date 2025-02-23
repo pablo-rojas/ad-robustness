@@ -121,6 +121,22 @@ class UninformedStudents(nn.Module):
         self.optimizer.step()
 
         return total_loss
+    
+    def train_step(self, x, labels=None):
+        """
+        Performs a training step on a batch of anomaly-free images.
+        For each image, features are extracted from the teacher and student at multiple scales.
+        The loss is the sum (over scales) of the per-pixel MSE between L2-normalized features.
+        """
+        patches = extract_patches(x, self.patch_size)
+
+        # Reshape patches to have sufficient batch size
+        patches = patches.view(-1, x.size(1), self.patch_size, self.patch_size)
+
+        #
+        loss = self.train_patch(patches, labels)
+
+        return loss
 
     def train(self, mode=True):
         """
@@ -277,7 +293,7 @@ class STFPM(nn.Module):
         f3 = net.layer3(f2)
         return [f1, f2, f3]
 
-    def train_step(self, x):
+    def train_step(self, x, labels=None):
         """
         Performs a training step on a batch of anomaly-free images.
         For each image, features are extracted from the teacher and student at multiple scales.
@@ -307,7 +323,7 @@ class STFPM(nn.Module):
 
         return loss_total
 
-    def forward(self, x, return_map=False):
+    def forward(self, x, labels=None, return_map=False):
         """
         Forward pass for test-time inference.
         For each input image, we extract pyramid features from both teacher and student,

@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Initialize the CNN model that will be used as Discriminator in the ACGAN
+    # Note that this CNN model not used at all in the ACGAN training (unless acgan_features is used instead of acgan_1 or acgan_res).
     model = resnet18_classifier(device=device, dataset=dataset_name)
     im_channel = 3  # resnet18 expects 3-channel images
     in_dim = 500
