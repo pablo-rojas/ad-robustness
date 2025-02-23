@@ -6,7 +6,6 @@ from tqdm import tqdm
 import argparse
 
 from src.detector import STFPM
-from src.model_utils import extract_patches
 from src.dataset_utils import get_dataset
 from ACGAN.attacks.FGSM import FGSM
 from src.eval_utils import *
@@ -14,6 +13,7 @@ from src.eval_utils import *
 import numpy as np
 from torch import nn
 import torchvision.models as models
+from src.model_utils import resnet18_classifier
 
 def load_config(config_path):
     with open(config_path, 'r') as f:
@@ -39,12 +39,8 @@ def train(steps, device, writer, train_loader, detector):
                 if i >= steps:
                     break
 
-def test(detector, dataset, test_loader, device, n_samples=1000):
-    target_model = models.resnet18(pretrained=False)
-    target_model.fc = nn.Linear(target_model.fc.in_features, 10)  # For CIFAR-10.
-    target_model.load_state_dict(torch.load('models/resnet18_cifar.pth'))
-    target_model.to(device)
-    target_model.eval()
+def test(detector, dataset, test_loader, device, n_samples=1000, epsilon=0.1):
+    target_model =target_model = resnet18_classifier(device, dataset_name, 'models/ckpt.pth')
 
     nat_as = []  # Will store anomaly scores for clean images.
     nat_accuracy = 0
@@ -74,7 +70,7 @@ def test(detector, dataset, test_loader, device, n_samples=1000):
     adv_accuracy = 0
 
     # Initialize the attacker
-    fgsm = FGSM(model=target_model, norm=dataset.normalize, epsilon=0.05, targeted=-1)
+    fgsm = FGSM(model=target_model, norm=dataset.normalize, epsilon=epsilon, targeted=-1)
 
     processed = 0
     for images, labels in test_loader:
@@ -153,9 +149,10 @@ if __name__ == "__main__":
     # Initialize the detector model
     detector = STFPM(dataset, device, lr)
 
-    #train(steps, device, writer, train_loader, detector)
+    train(steps, device, writer, train_loader, detector)
+    detector.save(save_path)
 
-    detector.load(save_path)
+    #detector.load(save_path)
 
     n_samples = 1000
 

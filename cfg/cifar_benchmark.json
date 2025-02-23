@@ -1,6 +1,6 @@
 {
-    "experiment_name": "benchmark",
-    "target_model_path": "models/resnet18_cifar.pth",
+    "experiment_name": "benchmark_best",
+    "target_model_path": "models/ckpt.pth",
     "acgan_path": "models/cifar_acgan",
     "uninformed_students_path": "models/cifar_epsilon_0.1",
     "dataset": "cifar",
@@ -60,7 +60,7 @@
             }           
         ],
         "ensure_succesful_attack": true,
-        "samples": 1000,
-        "save": false
+        "samples": 100,
+        "save": true
     }
 }

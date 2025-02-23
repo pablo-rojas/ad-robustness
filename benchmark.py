@@ -12,7 +12,7 @@ import torchvision.models as models
 # Import dataset and evaluation utilities.
 from src.dataset_utils import get_dataset
 from src.detector import UninformedStudents, ClassConditionalUninformedStudents
-from src.model_utils import singe_discriminator_statistic
+from src.model_utils import singe_discriminator_statistic, resnet18_classifier
 from src.eval_utils import *
 
 # Import ACGAN modules.
@@ -20,6 +20,7 @@ from ACGAN.GAN.acgan_1 import ACGAN
 from ACGAN.GAN.acgan_res import ACGAN_Res
 from ACGAN.attacks.cw import CW
 from ACGAN.attacks.FGSM import FGSM
+from src.architectures import ResNet18
 
 # Import PGD attacker.
 from robustness import attacker
@@ -96,12 +97,7 @@ if __name__ == "__main__":
     )
 
     # Load the pretrained ResNet18 classifier.
-    target_model = models.resnet18(pretrained=False)
-    target_model.fc = nn.Linear(target_model.fc.in_features, 10)  # For CIFAR-10.
-    model_weights_path = config['target_model_path']
-    target_model.load_state_dict(torch.load(model_weights_path))
-    target_model.to(device)
-    target_model.eval()
+    target_model = resnet18_classifier(device, dataset_name, config['target_model_path'])
 
     # Initialize Uninformed Students
     detector = UninformedStudents(config['num_students'], dataset, patch_size=patch_size, device=device)
@@ -262,7 +258,7 @@ if __name__ == "__main__":
             as_UninformedStudents = (regression_error - detector.e_mean) / detector.e_std + (predictive_uncertainty - detector.v_mean) / detector.v_std
             adv_as_UninformedStudents.append(as_UninformedStudents)
 
-            save_image(save, results_dir_attack + "/img/"+str(i) + "_adv.png", dataset.normalize(adv_images)[0].detach().cpu(), dataset)
+            save_image(save, results_dir_attack + "/img/"+str(processed) + "_adv.png", dataset.normalize(adv_images)[0].detach().cpu(), dataset)
 
             processed += 1
             pbar.update(1)  # Manually update the progress bar for processed samples

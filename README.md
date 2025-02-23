@@ -4,6 +4,8 @@
 
 This repository contains the implementation of a detector model designed to identify adversarial examples in image datasets. The model employs multiple student networks to detect adversarial examples by analyzing the standard deviation and bias maps generated from the outputs of a teacher model and the student models.
 
+ACGAN forked from: github.com/wanghangpsu/acgan-ada/
+
 ## Requirements
 
 - Python 3.x

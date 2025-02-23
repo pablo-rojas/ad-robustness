@@ -1,7 +1,7 @@
 import os
 import torch
 import torch.nn as nn
-from src.model_utils import extract_patches, initialize_model
+from src.model_utils import extract_patches, initialize_model, resnet18_classifier
 import torchvision.models as models
 import torch.nn.functional as F
 
@@ -187,12 +187,8 @@ class UninformedStudents(nn.Module):
         return regression_error.item(), predictive_uncertainty.mean().item()
 
 def init_model_cifar(device):
-    teacher = models.resnet18(pretrained=False)
-    teacher.fc = nn.Linear(teacher.fc.in_features, 10)  # For CIFAR-10.
-    teacher.load_state_dict(torch.load('models/resnet18_cifar.pth'))
-    teacher.to(device)
-    teacher.eval()
-    student = models.resnet18(pretrained=False)
+    teacher = resnet18_classifier(device, dataset='cifar', path='models/ckpt.pth')
+    student = resnet18_classifier(device, dataset='cifar')
 
     return teacher, student
 
@@ -261,7 +257,7 @@ class STFPM(nn.Module):
         """
         self.student.eval()
 
-    def extract_features(self, net, x):
+    def extract_features(self, net, x, dataset='cifar'):
         """
         Extracts the pyramid features from the network.
         For ResNet-18, we use:
@@ -271,8 +267,11 @@ class STFPM(nn.Module):
         """
         x = net.conv1(x)
         x = net.bn1(x)
-        x = net.relu(x)
-        x = net.maxpool(x)
+        if dataset == 'cifar':
+            x = F.relu(x)
+        else:
+            x = self.relu(x)
+            x = net.maxpool(x)
         f1 = net.layer1(x)
         f2 = net.layer2(f1)
         f3 = net.layer3(f2)

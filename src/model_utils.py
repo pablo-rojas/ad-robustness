@@ -2,7 +2,66 @@ import torch
 from torch import nn
 import torchvision.models as models
 from src.architectures import *
+from collections import OrderedDict
 
+
+def resnet18_classifier(device='cpu', dataset='imagenet', path=None):
+    """
+    Constructs a ResNet18-based classifier model tailored for the specified dataset.
+    Args:
+        device (str): The compute device to allocate the model. Defaults to 'cpu'. Set to 'cuda' for GPU acceleration.
+        dataset (str): The dataset type to configure the model. Supported values are:
+            - 'cifar': Initializes a ResNet18 model for CIFAR datasets.
+            - 'MNIST': Initializes a ResNet18 model for MNIST (grayscale images), modifying the input dimensions.
+            - 'imagenet': Loads a pretrained ResNet18 model for ImageNet.
+        path (str, optional): If provided, specifies a file path to load the model's state. For the 'MNIST' case, the state is expected under the 'net' key.
+    Returns:
+        torch.nn.Module: The configured ResNet18-based classifier model, set to evaluation mode and moved to the specified device.
+    Raises:
+        ValueError: If an unsupported dataset type is provided.
+    """
+
+    if dataset=='cifar':
+        model = ResNet18()
+        if path is not None:
+            checkpoint = torch.load(path, map_location=device)
+            state_dict = checkpoint['net']
+            if next(iter(state_dict)).startswith("module."):
+                new_state_dict = OrderedDict()
+                for key, value in state_dict.items():
+                    new_key = key.replace("module.", "")
+                    new_state_dict[new_key] = value
+                state_dict = new_state_dict
+
+            model.load_state_dict(state_dict)
+
+    elif dataset=='mnist':
+        model = ResNet18(dim=1)
+        if path is not None:
+            checkpoint = torch.load(path, map_location=device)
+            state_dict = checkpoint['net']
+
+            if next(iter(state_dict)).startswith("module."):
+                new_state_dict = OrderedDict()
+                for key, value in state_dict.items():
+                    new_key = key.replace("module.", "")
+                    new_state_dict[new_key] = value
+                state_dict = new_state_dict
+
+            model.load_state_dict(state_dict)
+
+    elif dataset=='imagenet':
+        model = models.resnet18(pretrained=True)
+
+    else:
+        raise ValueError(f"Dataset {dataset} not supported")
+    
+    model.to(device)
+    model.eval()
+    
+    return model
+    
+    
 def extract_patches(image, patch_size):
     """
     Extracts patches from an image.
@@ -41,8 +100,9 @@ def singe_discriminator_statistic(discriminator_output, target_label):
     aux_prob, aux_out = discriminator_output
     s_d = torch.log(aux_prob) + torch.log(aux_out[:, target_label])
     if torch.isneginf(s_d).any():
-        return torch.tensor(100.0, device=s_d.device)
+        return torch.tensor(-100.0, device=s_d.device)
     return -s_d
+
 
 def initialize_model_cifar(num_students, dataset, resume_path='models/cifar_nat.pt'):
     """

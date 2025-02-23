@@ -8,6 +8,8 @@ from torch import nn
 
 # Import your dataset class from your own code
 from src.dataset_utils import get_dataset
+from src.model_utils import resnet18_classifier
+
 # Import the CNN and ACGAN definitions from the ACGAN folder
 from ACGAN.GAN.acgan_1 import ACGAN
 from ACGAN.GAN.acgan_res import ACGAN_Res
@@ -26,7 +28,6 @@ if __name__ == "__main__":
                         help='Path to the configuration file.')
     args = parser.parse_args()
 
-    #config = load_config(args.config)
     dataset_name = 'cifar'        # e.g. "mnist" or "cifar"
     experiment_name = 'cifar_acgan'
 
@@ -40,15 +41,8 @@ if __name__ == "__main__":
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Use the pretrained resnet18 from the PyTorch model hub.
-    # Define the model architecture
-    model = models.resnet18(pretrained=False)
-    model.fc = nn.Linear(model.fc.in_features, 10)  # CIFAR-10 has 10 classes
-
-    # Load the model weights
-    model.load_state_dict(torch.load('models/resnet18_cifar.pth'))
-    model.to(device)
-    model.eval()
+    # Initialize the CNN model that will be used as Discriminator in the ACGAN
+    model = resnet18_classifier(device=device, dataset=dataset_name)
     im_channel = 3  # resnet18 expects 3-channel images
     in_dim = 500
     class_dim = 10
