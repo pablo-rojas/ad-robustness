@@ -73,29 +73,30 @@ if __name__ == "__main__":
 
     # Load the dataset and create a per-sample loader.
     dataset = get_dataset(dataset_name)
-    _, test_dataset = dataset.make_loaders(workers=4, batch_size=1)
+    test_loader = dataset.make_loaders(workers=4, batch_size=1, only_test=True)
+    # _, test_dataset = dataset.make_loaders(workers=4, batch_size=1)
 
-    if isinstance(test_dataset, torch.utils.data.DataLoader):
-        test_dataset = test_dataset.dataset
+    # if isinstance(test_dataset, torch.utils.data.DataLoader):
+    #     test_dataset = test_dataset.dataset
 
-    num_samples = len(test_dataset)
-    indices = list(range(num_samples))
-    np.random.seed(42)
-    np.random.shuffle(indices)
-    sampler = FixedOrderSampler(indices)
+    # num_samples = len(test_dataset)
+    # indices = list(range(num_samples))
+    # np.random.seed(42)
+    # np.random.shuffle(indices)
+    # sampler = FixedOrderSampler(indices)
 
-    # Define a generator for reproducibility.
-    g = torch.Generator()
-    g.manual_seed(42)
+    # # Define a generator for reproducibility.
+    # g = torch.Generator()
+    # g.manual_seed(42)
 
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset,
-        batch_size=1,
-        sampler=sampler,
-        num_workers=1,
-        worker_init_fn=seed_worker,
-        generator=g
-    )
+    # test_loader = torch.utils.data.DataLoader(
+    #     test_dataset,
+    #     batch_size=1,
+    #     sampler=sampler,
+    #     num_workers=1,
+    #     worker_init_fn=seed_worker,
+    #     generator=g
+    # )
 
     # Load the pretrained ResNet18 classifier.
     target_model = resnet18_classifier(device, dataset_name, config['target_model_path'])
