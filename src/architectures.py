@@ -1,16 +1,41 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-    
+
+import torch
+import torch.nn as nn
+
+class Patch7Descriptor(nn.Module):
+    def __init__(self, dim=3):
+        super(Patch7Descriptor, self).__init__()
+        # For a 7x7 patch, three conv layers with kernel size 3 reduce spatial size to 1x1.
+        self.conv1 = nn.Conv2d(in_channels=dim, out_channels=128, kernel_size=3, stride=1, padding=0)
+        self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=0)
+        self.conv3 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=0)
+        # 1x1 convolution to map 256 channels to 512.
+        self.decode = nn.Conv2d(in_channels=256, out_channels=512, kernel_size=1, stride=1)
+        
+        # Leaky ReLU with negative slope 5e-3
+        self.leaky_relu = nn.LeakyReLU(negative_slope=5e-3)
+
+    def forward(self, x):
+        # x: (N, dim, 7, 7)
+        x = self.leaky_relu(self.conv1(x))  # (N, 128, 5, 5)
+        x = self.leaky_relu(self.conv2(x))  # (N, 256, 3, 3)
+        x = self.leaky_relu(self.conv3(x))  # (N, 256, 1, 1)
+        x = self.decode(x)                  # (N, 512, 1, 1)
+        return x
+
 class Patch17Descriptor(nn.Module):
-    def __init__(self):
+    def __init__(self, dim=3):
         super(Patch17Descriptor, self).__init__()
 
         # Architecture for p = 17
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=128, kernel_size=5, stride=1)
+        self.conv1 = nn.Conv2d(in_channels=dim, out_channels=128, kernel_size=5, stride=1)
         self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=5, stride=1)
         self.conv3 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=5, stride=1)
         self.conv4 = nn.Conv2d(in_channels=256, out_channels=128, kernel_size=5, stride=1)
+        
         self.decode = nn.Conv2d(in_channels=128, out_channels=512, kernel_size=1, stride=1)
         
         # Leaky ReLU with slope 5e-3
@@ -29,11 +54,11 @@ class Patch17Descriptor(nn.Module):
         return x
 
 class Patch33Descriptor(nn.Module):
-    def __init__(self):
+    def __init__(self, dim=3):
         super(Patch33Descriptor, self).__init__()
 
         # Architecture for p = 33
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=128, kernel_size=3, stride=1, padding=1)
+        self.conv1 = nn.Conv2d(in_channels=dim, out_channels=128, kernel_size=3, stride=1, padding=1)
         self.maxpool1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=5, stride=1, padding=2)
         self.maxpool2 = nn.MaxPool2d(kernel_size=2, stride=2)
@@ -59,11 +84,11 @@ class Patch33Descriptor(nn.Module):
         return x
 
 class Patch65Descriptor(nn.Module):
-    def __init__(self):
+    def __init__(self, dim=3):
         super(Patch65Descriptor, self).__init__()
         
         # Define layers as per the table
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=128, kernel_size=5, stride=1, padding=2)
+        self.conv1 = nn.Conv2d(in_channels=dim, out_channels=128, kernel_size=5, stride=1, padding=2)
         self.maxpool1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.conv2 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=5, stride=1, padding=2)
         self.maxpool2 = nn.MaxPool2d(kernel_size=2, stride=2)
@@ -92,7 +117,6 @@ class Patch65Descriptor(nn.Module):
         x = self.decode(x)
         
         return x
-
 
 class BasicBlock(nn.Module):
     expansion = 1

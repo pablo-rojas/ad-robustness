@@ -41,16 +41,16 @@ def test(model, test_loader, criterion, norm, device):
 
 def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     dataset = get_dataset(args.dataset)
     norm = dataset.normalize
-
-
-#     transform_train = transforms.Compose([
-#     transforms.RandomCrop(32, padding=4),
-#     transforms.RandomHorizontalFlip(),
-#     norm
-# ])
+    if args.dataset == 'mnist':
+        transform_train = transforms.Compose([norm])
+    else:
+        transform_train = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            norm
+            ])
     transform_train = transforms.Compose([norm])
     train_loader, test_loader = dataset.make_loaders(batch_size=args.batch_size, workers=args.workers, only_train=True)
 
@@ -103,7 +103,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train ResNet18 on MNIST or CIFAR datasets')
-    parser.add_argument('--dataset', type=str, default='mnist', help='Dataset to use: mnist or cifar')
+    parser.add_argument('--dataset', type=str, default='cifar', help='Dataset to use: mnist or cifar')
     parser.add_argument('--batch_size', type=int, default=256, help='Batch size for training')
     parser.add_argument('--epochs', type=int, default=90, help='Number of epochs to train')
     parser.add_argument('--lr', type=float, default=0.1, help='Learning rate')

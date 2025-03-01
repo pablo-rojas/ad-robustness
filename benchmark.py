@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 import os
-import json
 import torch
 import argparse
 
 import numpy as np
 from tqdm import tqdm
 import random
-from torch import nn
-import torchvision.models as models
 
 # Import dataset and evaluation utilities.
 from src.dataset_utils import get_dataset
@@ -21,7 +18,6 @@ from ACGAN.GAN.acgan_1 import ACGAN
 from ACGAN.GAN.acgan_res import ACGAN_Res
 from ACGAN.attacks.cw import CW
 from ACGAN.attacks.FGSM import FGSM
-from src.architectures import ResNet18
 
 # Import PGD attacker.
 from robustness import attacker
@@ -43,14 +39,7 @@ def seed_worker(worker_id):
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Test ACGAN with PGD adversarial attack and compute anomaly score metrics"
-    )
-    parser.add_argument('--config', type=str, default='cfg/cifar_benchmark.json',
-                        help='Path to the configuration file.')
-    args = parser.parse_args()
-
+def main(args):
     config = load_config(args.config)
     dataset_name = config['dataset']
     experiment_name = config['experiment_name']
@@ -74,29 +63,6 @@ if __name__ == "__main__":
     # Load the dataset and create a per-sample loader.
     dataset = get_dataset(dataset_name)
     test_loader = dataset.make_loaders(workers=4, batch_size=1, only_test=True)
-    # _, test_dataset = dataset.make_loaders(workers=4, batch_size=1)
-
-    # if isinstance(test_dataset, torch.utils.data.DataLoader):
-    #     test_dataset = test_dataset.dataset
-
-    # num_samples = len(test_dataset)
-    # indices = list(range(num_samples))
-    # np.random.seed(42)
-    # np.random.shuffle(indices)
-    # sampler = FixedOrderSampler(indices)
-
-    # # Define a generator for reproducibility.
-    # g = torch.Generator()
-    # g.manual_seed(42)
-
-    # test_loader = torch.utils.data.DataLoader(
-    #     test_dataset,
-    #     batch_size=1,
-    #     sampler=sampler,
-    #     num_workers=1,
-    #     worker_init_fn=seed_worker,
-    #     generator=g
-    # )
 
     # Load the pretrained ResNet18 classifier.
     target_model = resnet18_classifier(device, dataset_name, config['target_model_path'])
@@ -137,6 +103,7 @@ if __name__ == "__main__":
     e_list = []
     u_list = []
     nat_as_ACGAN = []  # Will store anomaly scores for clean images.
+    nat_as_UninformedStudents = []  # Will store anomaly scores for clean images.
     nat_accuracy = 0
 
     print("Starting evaluation on natural (clean) images ...")
@@ -155,6 +122,8 @@ if __name__ == "__main__":
 
         # Calculate AS for Uninformed Students
         regression_error, predictive_uncertainty = detector.forward(dataset.normalize(images.to(device)), labels)
+        as_UninformedStudents = (regression_error - detector.e_mean) / detector.e_std + (predictive_uncertainty - detector.v_mean) / detector.v_std
+        nat_as_UninformedStudents.append(as_UninformedStudents)
 
         # Append the values to the anomaly score list
         e_list.append(regression_error)
@@ -167,23 +136,7 @@ if __name__ == "__main__":
             break
 
     nat_as_ACGAN = np.array(nat_as_ACGAN)
-
-    # -------------------------------------------------------
-    # 1.5. (Optional) Normalize scores of Uninformed Students
-    # -------------------------------------------------------
-
-    # Calculate the mean and standard deviation of e_list and u_list
-    detector.e_mean = torch.tensor(e_list).mean().item()
-    detector.e_std = torch.tensor(e_list).std().item()
-    detector.v_mean = torch.tensor(u_list).mean().item()
-    detector.v_std = torch.tensor(u_list).std().item()
-
-    # Normalize e_list and u_list
-    e_list = [(e - detector.e_mean) / detector.e_std for e in e_list]
-    u_list = [(u - detector.v_mean) / detector.v_std for u in u_list]
-
-    # Compute the anomaly score list
-    nat_as_UninformedStudents = [e + u for e, u in zip(e_list, u_list)]
+    nat_as_UninformedStudents = np.array(nat_as_UninformedStudents)
 
     # Calculate the top 1% quantile 
     threshold_ACGAN = torch.quantile(torch.tensor(nat_as_ACGAN), 0.90).item()
@@ -315,3 +268,13 @@ if __name__ == "__main__":
             "pAUC": pAUC_UninformedStudents
         }
         save_results(results_dir_attack + '/uninformed_students', results_UninformedStudents, range=(-3, 17))
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Test ACGAN with PGD adversarial attack and compute anomaly score metrics"
+    )
+    parser.add_argument('--config', type=str, default='cfg/cifar_benchmark.json',
+                        help='Path to the configuration file.')
+    args = parser.parse_args()
+
+    main(args)

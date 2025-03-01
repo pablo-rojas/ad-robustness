@@ -1,9 +1,9 @@
 {
-    "experiment_name": "train_us_cifar",
+    "experiment_name": "train_us_imagenet",
     "method": "UninformedStudents",
-    "model_path": "models/cifar_us",
-    "dataset": "cifar",
-    "patch_size": 7,
+    "model_path": "models/imagenet_us",
+    "dataset": "imagenet",
+    "patch_size": 17,
     "num_students": 10,
     "train": {
         "steps": 50000,

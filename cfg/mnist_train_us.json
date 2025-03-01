@@ -1,8 +1,8 @@
 {
-    "experiment_name": "train_us_cifar",
+    "experiment_name": "train_us_mnist",
     "method": "UninformedStudents",
-    "model_path": "models/cifar_us",
-    "dataset": "cifar",
+    "model_path": "models/mnist_us",
+    "dataset": "mnist",
     "patch_size": 7,
     "num_students": 10,
     "train": {

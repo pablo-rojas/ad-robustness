@@ -130,22 +130,36 @@ def partial_auc(anomaly_free_scores, anomalous_scores, fpr_threshold=0.2):
     Returns:
     - pAUC (float): The partial AUC value up to the specified FPR threshold.
     """
-    # Combine the scores and create corresponding labels
-    y_true = np.array([0] * len(anomaly_free_scores) + [1] * len(anomalous_scores))
-    y_scores = np.array(anomaly_free_scores + anomalous_scores)
+    # Ensure inputs are numpy arrays and combine scores
+    anomaly_free_scores = np.array(anomaly_free_scores)
+    anomalous_scores = np.array(anomalous_scores)
+    y_scores = np.concatenate([anomaly_free_scores, anomalous_scores])
+    y_true = np.concatenate([np.zeros(len(anomaly_free_scores)), np.ones(len(anomalous_scores))])
     
-
     # Calculate the ROC curve
     fpr, tpr, _ = roc_curve(y_true, y_scores)
     
-    # Find the points where the FPR is below the threshold
-    fpr_threshold_indices = np.where(fpr <= fpr_threshold)[0]
+    # Select points where FPR is below the threshold
+    valid_idx = np.where(fpr <= fpr_threshold)[0]
+    fpr_restricted = fpr[valid_idx]
+    tpr_restricted = tpr[valid_idx]
     
-    # Restrict the FPR and TPR to those points
-    fpr_restricted = fpr[fpr_threshold_indices]
-    tpr_restricted = tpr[fpr_threshold_indices]
+    # If the last point is below fpr_threshold, add the point at fpr_threshold via linear interpolation
+    if fpr_restricted[-1] < fpr_threshold:
+        # Find index of the first FPR value above the threshold
+        idx = np.searchsorted(fpr, fpr_threshold)
+        # Ensure we don't go out of bounds
+        if idx < len(fpr):
+            # Linear interpolation for TPR at fpr_threshold
+            fpr_low, fpr_high = fpr[idx - 1], fpr[idx]
+            tpr_low, tpr_high = tpr[idx - 1], tpr[idx]
+            tpr_interp = tpr_low + (tpr_high - tpr_low) * ((fpr_threshold - fpr_low) / (fpr_high - fpr_low))
+            
+            # Append the interpolated point
+            fpr_restricted = np.append(fpr_restricted, fpr_threshold)
+            tpr_restricted = np.append(tpr_restricted, tpr_interp)
     
-    # Calculate the partial AUC using trapezoidal integration
+    # Compute the partial AUC using trapezoidal integration
     pAUC = auc(fpr_restricted, tpr_restricted)
     
     return pAUC

@@ -1,5 +1,5 @@
 {
-    "experiment_name": "benchmark_best_classifier",
+    "experiment_name": "train_stfpm_cifar",
     "method": "STFPM",
     "model_path": "models/cifar_stfpm",
     "dataset": "cifar",

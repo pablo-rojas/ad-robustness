@@ -1,7 +1,7 @@
 import os
 import torch
 import torch.nn as nn
-from src.model_utils import extract_patches, initialize_model, resnet18_classifier
+from src.model_utils import extract_patches, initialize_us_models, resnet18_classifier
 import torchvision.models as models
 import torch.nn.functional as F
 
@@ -22,7 +22,7 @@ class UninformedStudents(nn.Module):
     def __init__(self, num_students, dataset, patch_size=5, device='cpu'):
         super(UninformedStudents, self).__init__()
         self.patch_size = patch_size
-        self.teacher, self.teacher_feature_extractor, self.students = initialize_model(num_students, dataset)
+        self.teacher, self.teacher_feature_extractor, self.students = initialize_us_models(num_students, dataset, patch_size, device)
         self.criterion = nn.MSELoss()
         self.optimizer = torch.optim.Adam(
             [param for student in self.students for param in student.parameters()], lr=0.0001

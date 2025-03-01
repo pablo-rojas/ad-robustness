@@ -1,10 +1,10 @@
 {
-    "experiment_name": "benchmark_best_unt",
-    "target_model_path": "models/ckpt.pth",
+    "experiment_name": "benchmark_best",
+    "target_model_path": "models/resnet18_cifar.pth",
     "acgan_path": "models/cifar_acgan",
-    "uninformed_students_path": "models/cifar_epsilon_0.1",
+    "uninformed_students_path": "models/cifar_us_best",
     "dataset": "cifar",
-    "patch_size": 17,
+    "patch_size": 7,
     "num_students": 10,
     "train": {
         "steps": 100000

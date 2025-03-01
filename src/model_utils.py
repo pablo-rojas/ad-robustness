@@ -1,8 +1,15 @@
 import torch
 from torch import nn
 import torchvision.models as models
-from src.architectures import *
 from collections import OrderedDict
+
+try:
+    # If this is imported as a module (from src)
+    from src.architectures import *
+except ImportError:
+    # If this is the main script
+    from architectures import *
+
 
 # Model weights paths based on dataset
 model_paths = {
@@ -58,7 +65,10 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None, pretrained=
             model.load_state_dict(state_dict)
 
     elif dataset=='imagenet':
-        model = models.resnet18(pretrained=pretrained, weights_only=True)
+        if pretrained:
+            model = models.resnet18(weights='IMAGENET1K_V1')
+        else:
+            model = models.resnet18()
 
     else:
         raise ValueError(f"Dataset {dataset} not supported")
@@ -68,6 +78,33 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None, pretrained=
     
     return model
     
+# ...existing code...
+
+def get_patch_descriptor(patch_size, dim=3):
+    """
+    Returns the appropriate patch descriptor model based on patch size.
+    
+    Args:
+        patch_size (int): Size of the square patch (7, 17, 33, or 65)
+        dim (int): Number of input channels, default is 3 for RGB images
+        
+    Returns:
+        nn.Module: Appropriate patch descriptor model
+        
+    Raises:
+        ValueError: If patch_size is not one of the supported sizes
+    """
+    if patch_size == 7:
+        return Patch7Descriptor(dim=dim)
+    elif patch_size == 17:
+        return Patch17Descriptor(dim=dim)
+    elif patch_size == 33:
+        return Patch33Descriptor(dim=dim)
+    elif patch_size == 65:
+        return Patch65Descriptor(dim=dim)
+    else:
+        supported_sizes = [7, 17, 33, 65]
+        raise ValueError(f"Unsupported patch size: {patch_size}. Supported sizes are: {supported_sizes}")
     
 def extract_patches(image, patch_size):
     """
@@ -110,7 +147,7 @@ def singe_discriminator_statistic(discriminator_output, target_label):
         return torch.tensor(-100.0, device=s_d.device)
     return -s_d
     
-def initialize_us_models(num_students, dataset, device='cpu', pretrained=True):
+def initialize_us_models(num_students, dataset, patch_size, device='cpu'):
     """
     Initializes the teacher and student models for the given dataset.
     The teacher model uses pretrained weights via resnet18_classifier, while students have random weights.
@@ -132,7 +169,7 @@ def initialize_us_models(num_students, dataset, device='cpu', pretrained=True):
 
     # Initialize teacher model using resnet18_classifier
     teacher_model = resnet18_classifier(device=device, dataset=ds_name, 
-                                        path=model_paths[ds_name], pretrained=pretrained)
+                                        path=model_paths[ds_name])
     
     # Create feature extractor (removing the fully connected layer)
     teacher_feature_extractor = torch.nn.Sequential(*list(teacher_model.children())[:-1])
@@ -141,8 +178,48 @@ def initialize_us_models(num_students, dataset, device='cpu', pretrained=True):
     # Initialize student models with random weights using Patch17Descriptor
     student_models = []
     for _ in range(num_students):
-        student_model = Patch17Descriptor()
+        student_model = get_patch_descriptor(patch_size=patch_size, dim=1 if ds_name == 'mnist' else 3)
         student_model.to(device)
         student_models.append(student_model)
     
     return teacher_model, teacher_feature_extractor, student_models
+
+def main():
+    # Set device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    
+    # Initialize models for each dataset
+    datasets = ['cifar', 'mnist', 'imagenet']
+    
+    for dataset in datasets:
+        print(f"\n{'='*50}")
+        print(f"Initializing model for {dataset.upper()} dataset")
+        print(f"{'='*50}")
+        
+        # Get model path
+        path = model_paths[dataset]
+        print(f"Model path: {path if path else 'Using pretrained weights from torchvision'}")
+        
+        try:
+            # Initialize the model
+            model = resnet18_classifier(device=device, dataset=dataset)
+            
+            # Print model information
+            print(f"Model type: {type(model).__name__}")
+            
+            # Print parameter count
+            total_params = sum(p.numel() for p in model.parameters())
+            trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            print(f"Total parameters: {total_params:,}")
+            print(f"Trainable parameters: {trainable_params:,}")
+            
+            # Create feature extractor (similar to the selected line)
+            feature_extractor = torch.nn.Sequential(*list(model.children())[:-1])
+            print(f"Feature extractor: " + str(feature_extractor))
+            
+        except Exception as e:
+            print(f"Error initializing model for {dataset}: {e}")
+
+if __name__ == "__main__":
+    main()

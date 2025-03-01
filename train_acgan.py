@@ -42,8 +42,8 @@ def load_config(config_path):
         config = json.load(f)
     return config
 
-def test(gan, test_loader, device, n_samples=500, epsilon=0.005, targeted=1):
-    target_model = resnet18_classifier(device, test_loader.dataset.ds_name, 'models/ckpt.pth')
+def test(gan, test_loader, device, n_samples=500, epsilon=0.05, targeted=1):
+    target_model = resnet18_classifier(device, test_loader.dataset.ds_name)
 
     nat_as = []  # Will store anomaly scores for clean images.
     adv_as = []  # Will store anomaly scores for adversarial images.
@@ -129,30 +129,8 @@ if __name__ == "__main__":
 
     # Load your dataset using your own dataset class; fixed batch size=100.
     dataset = get_dataset(dataset_name)
-    train_loader, _ = dataset.make_loaders(workers=4, batch_size=256)
-    _, test_dataset = dataset.make_loaders(workers=4, batch_size=1)
+    train_loader, val_loader, test_loader = dataset.make_loaders(workers=4, batch_size=256)
 
-    if isinstance(test_dataset, torch.utils.data.DataLoader):
-        test_dataset = test_dataset.dataset
-
-    num_samples = len(test_dataset)
-    indices = list(range(num_samples))
-    np.random.seed(42)
-    np.random.shuffle(indices)
-    sampler = FixedOrderSampler(indices)
-
-    # Define a generator for reproducibility.
-    g = torch.Generator()
-    g.manual_seed(42)
-
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset,
-        batch_size=1,
-        sampler=sampler,
-        num_workers=1,
-        worker_init_fn=seed_worker,
-        generator=g
-    )
     test_loader.dataset.ds_name = dataset_name
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
