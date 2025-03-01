@@ -1,5 +1,5 @@
 {
-    "experiment_name": "benchmark_best",
+    "experiment_name": "benchmark_best_unt",
     "target_model_path": "models/ckpt.pth",
     "acgan_path": "models/cifar_acgan",
     "uninformed_students_path": "models/cifar_epsilon_0.1",
@@ -15,7 +15,7 @@
                 "type": "fgsm",
                 "epsilon": 0.05,
                 "constraint": "inf",
-                "targeted": -1
+                "targeted": 1
             },
             {
                 "type": "pgd",
@@ -60,7 +60,7 @@
             }           
         ],
         "ensure_succesful_attack": true,
-        "samples": 100,
+        "samples": 500,
         "save": true
     }
 }

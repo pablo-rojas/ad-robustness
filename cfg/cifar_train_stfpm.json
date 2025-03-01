@@ -1,0 +1,11 @@
+{
+    "experiment_name": "benchmark_best_classifier",
+    "method": "STFPM",
+    "model_path": "models/cifar_stfpm",
+    "dataset": "cifar",
+    "train": {
+        "steps": 10000,
+        "batch_size": 256,
+        "learning_rate": 0.4
+    }
+}

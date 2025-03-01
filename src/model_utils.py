@@ -24,7 +24,7 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None):
     if dataset=='cifar':
         model = ResNet18()
         if path is not None:
-            checkpoint = torch.load(path, map_location=device)
+            checkpoint = torch.load(path, map_location=device, weights_only=True)
             state_dict = checkpoint['net']
             if next(iter(state_dict)).startswith("module."):
                 new_state_dict = OrderedDict()
@@ -38,7 +38,7 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None):
     elif dataset=='mnist':
         model = ResNet18(dim=1)
         if path is not None:
-            checkpoint = torch.load(path, map_location=device)
+            checkpoint = torch.load(path, map_location=device, weights_only=True)
             state_dict = checkpoint['net']
 
             if next(iter(state_dict)).startswith("module."):
@@ -51,7 +51,7 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None):
             model.load_state_dict(state_dict)
 
     elif dataset=='imagenet':
-        model = models.resnet18(pretrained=True)
+        model = models.resnet18(pretrained=True, weights_only=True)
 
     else:
         raise ValueError(f"Dataset {dataset} not supported")

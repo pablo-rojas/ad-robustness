@@ -6,6 +6,7 @@ import argparse
 
 import numpy as np
 from tqdm import tqdm
+import random
 from torch import nn
 import torchvision.models as models
 
@@ -138,9 +139,13 @@ if __name__ == "__main__":
     nat_accuracy = 0
 
     print("Starting evaluation on natural (clean) images ...")
-    for i, (images, labels) in enumerate(tqdm(test_loader, desc="Natural Evaluation", total=n_samples)):
-        # For classification, move inputs to GPU.
+    processed = 0
+    for images, labels in test_loader:
         y = target_model(dataset.normalize(images.to(device))).detach().cpu()
+        # if incorrect prediction, skip the sample
+        if ensure_succesful_attack and (y.argmax(1) != labels).sum().item() > 0:
+                continue
+        # For classification, move inputs to GPU.
         nat_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
 
         # Calculate AS for ACGAN
@@ -154,9 +159,10 @@ if __name__ == "__main__":
         e_list.append(regression_error)
         u_list.append(predictive_uncertainty)
 
-        save_image(save, results_dir + "/img/"+str(i) + "_nat.png", dataset.normalize(images)[0].detach().cpu(), dataset)
+        save_image(save, results_dir + "/img/"+str(processed) + "_nat.png", dataset.normalize(images)[0].detach().cpu(), dataset)
 
-        if i >= n_samples:
+        processed += 1
+        if processed >= n_samples:
             break
 
     nat_as_ACGAN = np.array(nat_as_ACGAN)
@@ -281,8 +287,8 @@ if __name__ == "__main__":
         acc_UninformedStudents = (detected_UninformedStudents / len(adv_as_UninformedStudents) * 100) if len(adv_as_UninformedStudents) > 0 else 0
 
         # Compute partial AUC (pAUC) using the provided utility.
-        pAUC_ACGAN = partial_auc( nat_as_ACGAN.tolist(), adv_as_ACGAN.tolist())
-        pAUC_UninformedStudents = partial_auc( nat_as_UninformedStudents, adv_as_UninformedStudents.tolist())
+        pAUC_ACGAN = partial_auc(nat_as_ACGAN.tolist(), adv_as_ACGAN.tolist())
+        pAUC_UninformedStudents = partial_auc(nat_as_UninformedStudents, adv_as_UninformedStudents.tolist())
 
         # -------------------------------s
         # 4. Save and display results.
@@ -296,7 +302,7 @@ if __name__ == "__main__":
             "adversarial_detection_accuracy": acc_ACGAN,
             "pAUC": pAUC_ACGAN
         }
-        save_results(results_dir_attack + '/acgan', results_ACGAN, range=(0, 25))
+        save_results(results_dir_attack + '/acgan', results_ACGAN, range=(0, 101))
         
         results_UninformedStudents = {
             "nat_list": nat_as_UninformedStudents,
