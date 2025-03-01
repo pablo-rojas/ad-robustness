@@ -1,13 +1,12 @@
-import torch
-import torchvision.transforms as transforms
-from torch.utils.data import DataLoader, Dataset
-from robustness import datasets as robustness_datasets
-from sklearn.datasets import fetch_openml
-import torchvision.datasets as datasets
-from torch.utils.data import Sampler
-
-import numpy as np
 import random
+import numpy as np
+
+import torch
+import torch.utils.data
+from torch.utils.data import DataLoader, Dataset, Sampler
+
+import torchvision.datasets as datasets
+import torchvision.transforms as transforms
 
 class FixedOrderSampler(Sampler):
     def __init__(self, indices):
