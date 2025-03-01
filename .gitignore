@@ -22,6 +22,9 @@ models/
 results/
 data/
 
+# Old files and trash
+old/
+
 # Images
 *.png
 *.jpg

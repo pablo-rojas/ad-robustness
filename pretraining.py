@@ -5,10 +5,10 @@ import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchvision.models as models
 import torchvision.transforms as transforms
 
-from dataset_utils import get_dataset, get_loaders
+from src.dataset_utils import get_dataset
+from src.model_utils import resnet18_classifier
 
 def train(model, train_loader, criterion, optimizer, trans, device):
     model.train()
@@ -44,17 +44,17 @@ def main(args):
 
     dataset = get_dataset(args.dataset)
     norm = dataset.normalize
-    transform_train = transforms.Compose([
-    transforms.RandomCrop(32, padding=4),
-    transforms.RandomHorizontalFlip(),
-    norm
-])
-    train_loader, test_loader = get_loaders(dataset, workers=args.workers, batch_size=args.batch_size)
 
-    model = models.resnet18(pretrained=False)
-    num_ftrs = model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, 10)  # Adjust the final layer for MNIST/CIFAR10
-    model = model.to(device)
+
+#     transform_train = transforms.Compose([
+#     transforms.RandomCrop(32, padding=4),
+#     transforms.RandomHorizontalFlip(),
+#     norm
+# ])
+    transform_train = transforms.Compose([norm])
+    train_loader, test_loader = dataset.make_loaders(batch_size=args.batch_size, workers=args.workers, only_train=True)
+
+    model = resnet18_classifier(device, dataset.ds_name, pretrained=False)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -103,9 +103,9 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train ResNet18 on MNIST or CIFAR datasets')
-    parser.add_argument('--dataset', type=str, choices=['mnist', 'cifar'], required=True, help='Dataset to use: mnist or cifar')
-    parser.add_argument('--batch_size', type=int, default=512, help='Batch size for training')
-    parser.add_argument('--epochs', type=int, default=2000, help='Number of epochs to train')
+    parser.add_argument('--dataset', type=str, default='mnist', help='Dataset to use: mnist or cifar')
+    parser.add_argument('--batch_size', type=int, default=256, help='Batch size for training')
+    parser.add_argument('--epochs', type=int, default=90, help='Number of epochs to train')
     parser.add_argument('--lr', type=float, default=0.1, help='Learning rate')
     parser.add_argument('--workers', type=int, default=8, help='Number of data loading workers')
     parser.add_argument('--momentum', type=float, default=0.9, help='Momentum for SGD optimizer')

@@ -70,8 +70,10 @@ class MNISTDataset(BaseDataset):
     def __init__(self, data_path='./data/mnist', seed=42, normalize_images=False):
         # Set dataset name and normalization parameters
         self.ds_name = 'mnist'
-        self.mean = torch.tensor([0.5, 0.5, 0.5])
-        self.std = torch.tensor([0.5, 0.5, 0.5])
+        # self.mean = torch.tensor([0.5, 0.5, 0.5])
+        # self.std = torch.tensor([0.5, 0.5, 0.5])
+        self.mean = torch.tensor([0.5])
+        self.std = torch.tensor([0.5])
         self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
         
         # Define transformations based on normalize_images flag
