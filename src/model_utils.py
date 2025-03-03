@@ -53,16 +53,16 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None, pretrained=
         model = ResNet18(dim=1)
         if pretrained and path is not None:
             checkpoint = torch.load(path, map_location=device, weights_only=True)
-            state_dict = checkpoint['net']
+            # state_dict = checkpoint['net']
 
-            if next(iter(state_dict)).startswith("module."):
-                new_state_dict = OrderedDict()
-                for key, value in state_dict.items():
-                    new_key = key.replace("module.", "")
-                    new_state_dict[new_key] = value
-                state_dict = new_state_dict
+            # if next(iter(state_dict)).startswith("module."):
+            #     new_state_dict = OrderedDict()
+            #     for key, value in state_dict.items():
+            #         new_key = key.replace("module.", "")
+            #         new_state_dict[new_key] = value
+            #     state_dict = new_state_dict
 
-            model.load_state_dict(state_dict)
+            model.load_state_dict(checkpoint)
 
     elif dataset=='imagenet':
         if pretrained:

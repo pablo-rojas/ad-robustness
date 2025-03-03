@@ -94,10 +94,13 @@ def save_inv_cdf(save_folder, nat_list, adv_list, range=(-3, 17), bins=100):
     plt.close()
 
 def save_roc_curve(save_folder, nat_list, adv_list):
-    # Combine the scores and create corresponding labels
-    y_true = np.array([0] * len(nat_list) + [1] * len(adv_list))
-    y_scores = np.array(nat_list + adv_list)
-    
+
+    # Ensure inputs are numpy arrays and combine scores
+    anomaly_free_scores = np.array(nat_list)
+    anomalous_scores = np.array(adv_list)
+    y_scores = np.concatenate([anomaly_free_scores, anomalous_scores])
+    y_true = np.concatenate([np.zeros(len(anomaly_free_scores)), np.ones(len(anomalous_scores))])
+
     # Calculate the ROC curve
     fpr, tpr, _ = roc_curve(y_true, y_scores)
     

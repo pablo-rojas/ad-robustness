@@ -202,9 +202,9 @@ class UninformedStudents(nn.Module):
 
         return regression_error.item(), predictive_uncertainty.mean().item()
 
-def init_model_cifar(device):
-    teacher = resnet18_classifier(device, dataset='cifar', path='models/ckpt.pth')
-    student = resnet18_classifier(device, dataset='cifar')
+def init_model_cifar(device, dataset='cifar'):
+    teacher = resnet18_classifier(device, dataset=dataset, pretrained=True)
+    student = resnet18_classifier(device, dataset=dataset, pretrained=False)
 
     return teacher, student
 
@@ -212,7 +212,7 @@ class STFPM(nn.Module):
         
     def __init__(self, dataset, device='cpu', lr=0.0001):
         super(STFPM, self).__init__()
-        self.teacher, self.student = init_model_cifar(device)
+        self.teacher, self.student = init_model_cifar(device, dataset=dataset.ds_name)
         self.criterion = nn.MSELoss()
         self.optimizer = torch.optim.Adam(
             [param  for param in self.student.parameters()], lr=lr

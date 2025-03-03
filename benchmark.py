@@ -24,20 +24,6 @@ from robustness import attacker
 
 from torch.utils.data import Sampler
 
-class FixedOrderSampler(Sampler):
-    def __init__(self, indices):
-        self.indices = indices
-
-    def __iter__(self):
-        return iter(self.indices)
-
-    def __len__(self):
-        return len(self.indices)
-
-def seed_worker(worker_id):
-    worker_seed = 42 + worker_id
-    np.random.seed(worker_seed)
-    random.seed(worker_seed)
 
 def main(args):
     config = load_config(args.config)
@@ -124,10 +110,6 @@ def main(args):
         regression_error, predictive_uncertainty = detector.forward(dataset.normalize(images.to(device)), labels)
         as_UninformedStudents = (regression_error - detector.e_mean) / detector.e_std + (predictive_uncertainty - detector.v_mean) / detector.v_std
         nat_as_UninformedStudents.append(as_UninformedStudents)
-
-        # Append the values to the anomaly score list
-        e_list.append(regression_error)
-        u_list.append(predictive_uncertainty)
 
         save_image(save, results_dir + "/img/"+str(processed) + "_nat.png", dataset.normalize(images)[0].detach().cpu(), dataset)
 

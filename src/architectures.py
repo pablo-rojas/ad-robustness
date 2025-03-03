@@ -58,13 +58,13 @@ class Patch33Descriptor(nn.Module):
         super(Patch33Descriptor, self).__init__()
 
         # Architecture for p = 33
-        self.conv1 = nn.Conv2d(in_channels=dim, out_channels=128, kernel_size=3, stride=1, padding=1)
-        self.maxpool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=5, stride=1, padding=2)
-        self.maxpool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv3 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=5, stride=1, padding=2)
-        self.conv4 = nn.Conv2d(in_channels=256, out_channels=128, kernel_size=4, stride=1)
-        self.decode = nn.Conv2d(in_channels=128, out_channels=512, kernel_size=1, stride=1)
+        self.conv1      = nn.Conv2d(in_channels=dim, out_channels=128,  kernel_size=5, stride=1)
+        self.maxpool1   = nn.MaxPool2d(                                 kernel_size=2, stride=2)
+        self.conv2      = nn.Conv2d(in_channels=128, out_channels=256,  kernel_size=5, stride=1)
+        self.maxpool2   = nn.MaxPool2d(                                 kernel_size=2, stride=2)
+        self.conv3      = nn.Conv2d(in_channels=256, out_channels=256,  kernel_size=2, stride=1)
+        self.conv4      = nn.Conv2d(in_channels=256, out_channels=128,  kernel_size=4, stride=1)
+        self.decode     = nn.Conv2d(in_channels=128, out_channels=512,  kernel_size=1, stride=1)
         
         # Leaky ReLU with slope 5e-3
         self.leaky_relu = nn.LeakyReLU(negative_slope=5e-3)
@@ -88,15 +88,15 @@ class Patch65Descriptor(nn.Module):
         super(Patch65Descriptor, self).__init__()
         
         # Define layers as per the table
-        self.conv1 = nn.Conv2d(in_channels=dim, out_channels=128, kernel_size=5, stride=1, padding=2)
-        self.maxpool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv2 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=5, stride=1, padding=2)
-        self.maxpool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv3 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=5, stride=1, padding=2)
-        self.maxpool3 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv4 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=4, stride=1)
-        self.conv5 = nn.Conv2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1)
-        self.decode = nn.Conv2d(in_channels=128, out_channels=512, kernel_size=1, stride=1)
+        self.conv1      = nn.Conv2d(in_channels=dim, out_channels=128,  kernel_size=5, stride=1)
+        self.maxpool1   = nn.MaxPool2d(                                 kernel_size=2, stride=2)
+        self.conv2      = nn.Conv2d(in_channels=128, out_channels=128,  kernel_size=5, stride=1)
+        self.maxpool2   = nn.MaxPool2d(                                 kernel_size=2, stride=2)
+        self.conv3      = nn.Conv2d(in_channels=128, out_channels=128,  kernel_size=5, stride=1)
+        self.maxpool3   = nn.MaxPool2d(                                 kernel_size=2, stride=2)
+        self.conv4      = nn.Conv2d(in_channels=128, out_channels=256,  kernel_size=4, stride=1)
+        self.conv5      = nn.Conv2d(in_channels=256, out_channels=128,  kernel_size=3, stride=1)
+        self.decode     = nn.Conv2d(in_channels=128, out_channels=512,  kernel_size=1, stride=1)
 
         # Activation function (Leaky ReLU with slope 5e-3)
         self.leaky_relu = nn.LeakyReLU(negative_slope=5e-3)

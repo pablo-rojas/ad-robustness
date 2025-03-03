@@ -155,7 +155,7 @@ class ImageNetDataset(BaseDataset):
                                               transform=transform)
         self.val_data = datasets.ImageFolder(root=f"{data_path}/val", 
                                             transform=transform)
-        self.test_data = datasets.ImageFolder(root=f"{data_path}/test", 
+        self.test_data = datasets.ImageFolder(root=f"{data_path}/val", 
                                              transform=transform)
 
 def get_dataset(dataset_name):
