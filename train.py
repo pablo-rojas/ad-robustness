@@ -1,8 +1,6 @@
-import os
 import json
 import torch
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 import argparse
 
 from src.detector import STFPM, ClassConditionalUninformedStudents, UninformedStudents
@@ -11,8 +9,6 @@ from ACGAN.attacks.FGSM import FGSM
 from src.eval_utils import *
 
 import numpy as np
-from torch import nn
-import torchvision.models as models
 from src.model_utils import resnet18_classifier, model_paths
 import time
 
@@ -36,14 +32,14 @@ def initialize_detector(config, dataset, device):
         detector = ClassConditionalUninformedStudents(
             config['num_students'], 
             dataset, 
-            patch_size=config['patch_size'], 
+            patch_size=config['patch_size'], lr=config['train']['learning_rate'],
             device=device
         )
     elif method == 'UninformedStudents':
         detector = UninformedStudents(
             config['num_students'], 
             dataset, 
-            patch_size=config['patch_size'], 
+            patch_size=config['patch_size'], lr=config['train']['learning_rate'],
             device=device
         )
     else:
@@ -56,7 +52,13 @@ def load_config(config_path):
         config = json.load(f)
     return config
 
-def train(steps, device, norm, writer, train_loader, detector, save_path, test_loader=None, val_interval=None):
+def train(config, device, norm, writer, train_loader, detector, test_loader=None):
+    
+    # Parameters from JSON
+    save_path = config['model_path']
+    steps = config['train']['steps']
+    val_interval = config['train']['test_interval'] if config['train']['test_interval'] != 0 else None
+
     i = 0
     epoch = 1
     best_pAUC = 0
@@ -72,9 +74,7 @@ def train(steps, device, norm, writer, train_loader, detector, save_path, test_l
             i += 1
 
             if val_interval is not None and i % val_interval == 0:
-                if test_loader is None:
-                    print(f"Epoch {epoch} time: {epoch_time:.1f}s, Est. time left: {estimated_time_left/60:.1f}min")
-                else:
+                if test_loader is not None:
                     results = test(detector, test_loader, device, norm)
                     if results['pAUC'] > best_pAUC:
                         best_pAUC = results['pAUC']
@@ -83,8 +83,8 @@ def train(steps, device, norm, writer, train_loader, detector, save_path, test_l
 
                     writer.add_scalar('Metrics/pAUC', results['pAUC'], i)
                     
-                    if i >= steps:
-                        break
+            if i >= steps:
+                break
 
         epoch_time = time.time() - epoch_start
         elapsed_time = time.time() - start_time
@@ -95,7 +95,7 @@ def train(steps, device, norm, writer, train_loader, detector, save_path, test_l
         if test_loader is None:
             print(f"Epoch {epoch} time: {epoch_time:.1f}s, Est. time left: {estimated_time_left/60:.1f}min")
         else:
-            results = test(detector, test_loader, device, norm)
+            results = test(detector, test_loader, device, norm, n_samples=config['train']['test_samples'])
             if results['pAUC'] > best_pAUC:
                 best_pAUC = results['pAUC']
                 detector.save(save_path+'_best')
@@ -217,7 +217,6 @@ def main(args):
     # Parameters from JSON
     dataset_name = config['dataset']
     save_path = config['model_path']
-    steps = config['train']['steps']
     batch_size = config['train']['batch_size']
 
     # Initialize the device
@@ -234,7 +233,7 @@ def main(args):
     # Then call the function to initialize the detector
     detector = initialize_detector(config, dataset, device)
 
-    train(steps, device, dataset.normalize, writer, train_loader, detector, save_path, test_loader, val_interval=5000)
+    train(config, device, dataset.normalize, writer, train_loader, detector, test_loader)
     detector.save(save_path)
     print("Model saved at", save_path)
 

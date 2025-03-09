@@ -19,13 +19,13 @@ class UninformedStudents(nn.Module):
         optimizer (torch.optim.Optimizer): The optimizer.
     """
 
-    def __init__(self, num_students, dataset, patch_size=5, device='cpu'):
+    def __init__(self, num_students, dataset, patch_size=5, lr=0.0001, weight_decay=0, device='cpu'):
         super(UninformedStudents, self).__init__()
         self.patch_size = patch_size
         self.teacher, self.teacher_feature_extractor, self.students = initialize_us_models(num_students, dataset, patch_size, device)
         self.criterion = nn.MSELoss()
         self.optimizer = torch.optim.Adam(
-            [param for student in self.students for param in student.parameters()], lr=0.0001
+            [param for student in self.students for param in student.parameters()], lr=lr, weight_decay=weight_decay
         )
         self.to(device)
         print("Teacher: " + str(self.teacher_feature_extractor))
@@ -373,13 +373,13 @@ class ClassConditionalUninformedStudents(UninformedStudents):
         optimizer (torch.optim.Optimizer): The optimizer.
     """
 
-    def __init__(self, num_students, dataset, patch_size=5, device='cpu'):
+    def __init__(self, num_students, dataset, patch_size=5, lr=0.0001, device='cpu'):
         # Derive the number of students from the number of classes in the dataset.
         self.num_students = num_students
-        super(ClassConditionalUninformedStudents, self).__init__(num_students*dataset.num_classes, dataset, patch_size, device)
+        super(ClassConditionalUninformedStudents, self).__init__(num_students*dataset.num_classes, dataset, patch_size, lr, device)
         self.criterion = nn.MSELoss()
         self.optimizer = torch.optim.Adam(
-            [param for student in self.students for param in student.parameters()], lr=0.0001
+            [param for student in self.students for param in student.parameters()], lr=lr
         )
         self.to(device)
         print("Teacher: " + str(self.teacher_feature_extractor))

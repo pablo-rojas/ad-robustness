@@ -6,8 +6,10 @@
     "patch_size": 7,
     "num_students": 10,
     "train": {
-        "steps": 500000,
+        "steps": 5000000,
         "batch_size": 1,
-        "learning_rate": 0.0001
+        "learning_rate": 0.0001,
+        "test_interval": 0,
+        "test_samples": 500
     }
 }

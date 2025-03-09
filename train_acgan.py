@@ -42,7 +42,7 @@ def load_config(config_path):
         config = json.load(f)
     return config
 
-def test(gan, test_loader, device, n_samples=500, epsilon=0.05, targeted=1):
+def test(gan, test_loader, device, n_samples=400, epsilon=0.05, targeted=1):
     target_model = resnet18_classifier(device, test_loader.dataset.ds_name)
 
     nat_as = []  # Will store anomaly scores for clean images.
@@ -78,6 +78,10 @@ def test(gan, test_loader, device, n_samples=500, epsilon=0.05, targeted=1):
         if (y_adv.argmax(1) != labels).sum().item() < len(labels):
             continue
 
+        # if targeted attack, check if the target label is achieved
+        if targeted == 1 and (y_adv.argmax(1) != target_labels).sum().item() > 0:
+            continue
+
         # Check: Calculate natural and adversarial accuracy (Note that they should be 100% and 0% respectively).
         nat_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
         adv_accuracy += (y_adv.argmax(1) == labels).sum().item()/n_samples
@@ -89,9 +93,11 @@ def test(gan, test_loader, device, n_samples=500, epsilon=0.05, targeted=1):
         anomaly_score_adv = singe_discriminator_statistic(gan.discriminator(adv_images.to(device)), y_adv.argmax(1))
         adv_as = np.append(adv_as, anomaly_score_adv.item())
 
-        processed += 1
+        
         if processed >= n_samples:
             break
+
+        
 
     # Calculate the top 1% quantile 
     threshold = torch.quantile(torch.tensor(nat_as), 0.90).item()

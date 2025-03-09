@@ -254,7 +254,7 @@ def main():
     plt.legend()
     plt.grid(True)
     plt.savefig('roc_comparison.png', dpi=1200)  # Save figure with high resolution.
-    plt.show()  # Display the figure.
+    #plt.show()  # Display the figure.
     plt.close()
     
     # Print the partial AUC results.
