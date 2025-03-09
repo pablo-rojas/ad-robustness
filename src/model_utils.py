@@ -108,25 +108,34 @@ def get_patch_descriptor(patch_size, dim=3):
     
 def extract_patches(image, patch_size):
     """
-    Extracts patches from an image.
-
+    Extracts patches from an image tensor and returns them in a flat format.
+    
     Args:
-        image (torch.Tensor): The input image.
-        patch_size (int): The size of the patches.
-
+        image (torch.Tensor): Input tensor with shape [batch_size, channels, height, width].
+        patch_size (int): The size of each patch.
+    
     Returns:
-        torch.Tensor: The extracted patches.
+        torch.Tensor: Extracted patches with shape [total_patches, channels, patch_size, patch_size],
+                      where total_patches = batch_size * num_patches.
     """
-    # Unfold to extract sliding local blocks
+    # Unfold the image to extract patches.
+    # This results in a tensor of shape [batch_size, channels, num_patches_h, num_patches_w, patch_size, patch_size]
     patches = image.unfold(2, patch_size, patch_size).unfold(3, patch_size, patch_size)
-
-    # Combine the patches into a batch dimension
+    
+    # Combine the two patch dimensions into one.
+    # New shape: [batch_size, channels, num_patches, patch_size, patch_size]
     patches = patches.contiguous().view(image.size(0), image.size(1), -1, patch_size, patch_size)
-
-    # Permute to have patch dimension first
-    patches = patches.permute(2, 0, 1, 3, 4)
-
+    
+    # Permute to bring the patch dimension next to the batch dimension.
+    # New shape: [batch_size, num_patches, channels, patch_size, patch_size]
+    patches = patches.permute(0, 2, 1, 3, 4)
+    
+    # Flatten the batch and patch dimensions.
+    batch_size, num_patches, channels, ph, pw = patches.shape
+    patches = patches.reshape(batch_size * num_patches, channels, ph, pw)
+    
     return patches
+
 
 def singe_discriminator_statistic(discriminator_output, target_label):
     """

@@ -22,6 +22,9 @@ models/
 results/
 data/
 
+# Temporarily excluded, as it messes with copilot's commit suggestions
+cfg/
+
 # Old files and trash
 old/
 

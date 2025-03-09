@@ -245,7 +245,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate the detector model.")
-    parser.add_argument('--config', type=str, default='cfg/imagenet_train_us.json', help='Path to the configuration file.')
+    parser.add_argument('--config', type=str, default='cfg/cifar_train_us.json', help='Path to the configuration file.')
     args = parser.parse_args()
 
     main(args)

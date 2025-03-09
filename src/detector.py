@@ -101,39 +101,64 @@ class UninformedStudents(nn.Module):
 
         Args:
             patches (torch.Tensor): The input patches.
+            label (torch.Tensor, optional): The class label. Defaults to None.
 
         Returns:
             torch.Tensor: The total loss.
         """
-        # Forward pass of the teacher
+        # Forward pass of the teacher - compute once for all students
         teacher_outputs = self.teacher_feature_extractor(patches).detach().squeeze()
+        
+        # Preallocate tensor for student outputs.
+        # We assume each student's output (after squeeze) matches teacher_outputs shape.
+        num_students = len(self.students)
+        output_shape = teacher_outputs.shape  # e.g., (batch_size, features)
+        all_student_outputs = torch.empty((num_students,) + output_shape, 
+                                        device=patches.device, dtype=teacher_outputs.dtype)
+        
+        # Fill the preallocated tensor with each student's output
+        for i, student in enumerate(self.students):
+            # Compute output and squeeze to match teacher_outputs shape.
+            all_student_outputs[i] = student(patches).squeeze()
 
-        # Accumulate losses from each student model
-        total_loss = 0
-        for student in self.students:
-            student_outputs = student(patches).squeeze()
-            loss = self.criterion(student_outputs, teacher_outputs)
-            total_loss += loss
+        # Instead of expanding teacher_outputs explicitly, unsqueeze so broadcasting happens.
+        # This gives a shape [1, batch_size, features] which will broadcast to [num_students, batch_size, features].
+        #teacher_outputs_unsqueezed = teacher_outputs.unsqueeze(0)
 
-        # Perform a single backward pass and optimizer step for all students
+        teacher_outputs_unsqueezed = teacher_outputs.unsqueeze(0).expand(num_students, *teacher_outputs.shape)
+
+
+        # Compute loss for all students at once.
+        # If self.criterion is nn.MSELoss with default "mean" reduction, this returns a scalar.
+        losses = self.criterion(all_student_outputs, teacher_outputs_unsqueezed)
+        total_loss = losses.sum()  # If losses is scalar, .sum() is a no-op; adjust if using "none" reduction.
+
+        # Backpropagation
         self.optimizer.zero_grad()
         total_loss.backward()
         self.optimizer.step()
 
         return total_loss
-    
+
     def train_step(self, x, labels=None):
         """
         Performs a training step on a batch of anomaly-free images.
-        For each image, features are extracted from the teacher and student at multiple scales.
-        The loss is the sum (over scales) of the per-pixel MSE between L2-normalized features.
+        Extracts patches and trains the student models.
+
+        Args:
+            x (torch.Tensor): The input images.
+            labels (torch.Tensor, optional): The class labels. Defaults to None.
+
+        Returns:
+            torch.Tensor: The total loss.
         """
+        # Extract patches from all images in the batch
         patches = extract_patches(x, self.patch_size)
-
-        # Reshape patches to have sufficient batch size
+        
+        # Reshape to batch format
         patches = patches.view(-1, x.size(1), self.patch_size, self.patch_size)
-
-        #
+        
+        # Train on patches
         loss = self.train_patch(patches, labels)
 
         return loss
@@ -163,44 +188,30 @@ class UninformedStudents(nn.Module):
             image (torch.Tensor): The input image.
 
         Returns:
-            torch.Tensor, torch.Tensor: The average standard deviation map and average bias map.
+            torch.Tensor, torch.Tensor: The regression error and predictive uncertainty.
         """
         # Extract patches from the input image
+        # This returns a 4D tensor (num_patches, C, patch_size, patch_size)
         patches = extract_patches(image, self.patch_size)
         
-        # Initialize lists to store teacher and student outputs
-        teacher_outputs = []
-        student_outputs = {idx: [] for idx in range(len(self.students))}
-
-        # Iterate over each patch
-        for patch in patches:
-            patch = patch.to(self.device)
-            # Forward pass of the teacher model
-            teacher_output = self.teacher_feature_extractor(patch).detach().squeeze()
-            teacher_outputs.append(teacher_output)
-
-            # Forward pass of each student model
-            for student_idx, student in enumerate(self.students):
-                student_output = student(patch)
-                student_outputs[student_idx].append(student_output.squeeze())
-
-        # Concatenate teacher and student outputs
-        teacher_flat = torch.cat(teacher_outputs, dim=0)
-        student_flat = torch.stack([torch.cat(student_outputs[i], dim=0) for i in range(len(self.students))])
-
-        # Calculate mean of student outputs
-        students_mean = student_flat.mean(dim=0)
-
-        # Calculate squared differences for regression error
-        squared_diffs = (students_mean - teacher_flat) ** 2
-
-        # Regression error: Mean of squared differences across all students
-        regression_error = squared_diffs.mean(dim=0)
-
-        # Calculate predictive uncertainty (variance)
-        predictive_uncertainty = student_flat.var(dim=0)
-
-        return regression_error.item(), predictive_uncertainty.mean().item()
+        # We can process all patches in a single batch for efficiency
+        # Forward pass of the teacher model
+        teacher_outputs = self.teacher_feature_extractor(patches).detach().squeeze()
+        
+        # Forward pass of each student model
+        all_student_outputs = torch.stack([student(patches).squeeze() for student in self.students])
+        
+        # Calculate mean of student outputs across all students
+        students_mean = all_student_outputs.mean(dim=0)
+        
+        # Calculate regression error (squared difference between mean student output and teacher output)
+        squared_diffs = (students_mean - teacher_outputs) ** 2
+        regression_error = squared_diffs.mean()
+        
+        # Calculate predictive uncertainty (variance across student models)
+        predictive_uncertainty = all_student_outputs.var(dim=0).mean()
+        
+        return regression_error.item(), predictive_uncertainty.item()
 
 def init_model_cifar(device, dataset='cifar'):
     teacher = resnet18_classifier(device, dataset=dataset, pretrained=True)
