@@ -1,18 +1,17 @@
-import json
+import time
 import torch
+import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 import argparse
 
+from src.dataset_utils import get_dataset
+from src.detector import STFPM, ClassConditionalUninformedStudents, UninformedStudents
+from src.eval_utils import *
 from src.model_utils import resnet18_classifier, model_paths, initialize_detector
 from src.misc_utils import *
-from src.detector import STFPM, ClassConditionalUninformedStudents, UninformedStudents
-from src.dataset_utils import get_dataset
-from src.eval_utils import *
-
-import numpy as np
 
 from ACGAN.attacks.FGSM import FGSM
-import time
+
 
 
 def train(config, device, norm, writer, train_loader, detector, test_loader=None):
