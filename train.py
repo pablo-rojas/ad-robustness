@@ -5,9 +5,9 @@ from torch.utils.tensorboard import SummaryWriter
 import argparse
 
 from src.dataset_utils import get_dataset
-from src.detector import STFPM, ClassConditionalUninformedStudents, UninformedStudents
+from src.detector import *
 from src.eval_utils import *
-from src.model_utils import resnet18_classifier, model_paths, initialize_detector
+from src.model_utils import resnet18_classifier, model_paths
 from src.misc_utils import *
 
 from ACGAN.attacks.FGSM import FGSM

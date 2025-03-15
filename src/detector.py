@@ -1,12 +1,9 @@
 import os
 import torch
 import torch.nn as nn
-from src.model_utils import extract_patches, initialize_us_models, resnet18_classifier
-import torchvision.models as models
 import torch.nn.functional as F
-from src.architectures import modify_resnet_for_dense, DenseResNet18, DenseCIFARResNet18, BasicBlock
-from collections import OrderedDict
 
+from src.model_utils import extract_patches, initialize_us_models, resnet18_classifier
 
 class UninformedStudents(nn.Module):
     """
@@ -15,7 +12,6 @@ class UninformedStudents(nn.Module):
     Attributes:
         patch_size (int): The size of the patches.
         teacher (torch.nn.Module): The teacher model.
-        teacher_feature_extractor (torch.nn.Module): The teacher feature extractor.
         students (list): The student models.
         criterion (torch.nn.Module): The loss criterion.
         optimizer (torch.optim.Optimizer): The optimizer.
@@ -24,36 +20,18 @@ class UninformedStudents(nn.Module):
     def __init__(self, num_students, dataset, patch_size=5, lr=0.0001, weight_decay=0, device='cpu'):
         super(UninformedStudents, self).__init__()
         self.patch_size = patch_size
-        self.teacher, _, self.students = initialize_us_models(num_students, dataset, patch_size, device)
-        #base_model = modify_resnet_for_dense(self.teacher, cifar=(dataset.ds_name != 'imagenet'))
-        resnet_cifar = DenseCIFARResNet18(BasicBlock, [2, 2, 2, 2], dim=3).to(device)
-        checkpoint = torch.load("models/resnet18_cifar.pth", map_location=device, weights_only=True)
-        state_dict = checkpoint['net']
-        if next(iter(state_dict)).startswith("module."):
-            new_state_dict = OrderedDict()
-            for key, value in state_dict.items():
-                new_key = key.replace("module.", "")
-                new_state_dict[new_key] = value
-            state_dict = new_state_dict
-
-        resnet_cifar.load_state_dict(state_dict)
-        self.teacher_feature_extractor = resnet_cifar
-        #self.teacher_feature_extractor = nn.Sequential(*list(resnet_cifar.children())[:-1]) # Note how this is not strictly necessary, as in DenseCIFARResNet18 I already skip the avg_pool and linear layers in the forward function
-        for param in self.teacher_feature_extractor.parameters():
-            param.requires_grad = False
-        self.teacher_feature_extractor = self.teacher_feature_extractor.eval()
-        #self.teacher_feature_extractor = DenseResNet18(base_model).eval()
+        self.teacher, self.students = initialize_us_models(num_students, dataset, patch_size, device)
         self.criterion = nn.MSELoss()
         self.optimizer = torch.optim.Adam(
             [param for student in self.students for param in student.parameters()], lr=lr, weight_decay=weight_decay
         )
         self.to(device)
-        print("Teacher: " + str(self.teacher_feature_extractor))
+        print("Teacher: " + str(self.teacher))
         print("Students: " + str(self.students))
     
     def save(self, path):
         """
-        Saves the teacher, teacher feature extractor, and student models to the specified path.
+        Saves the teacher, and student models to the specified path.
 
         Args:
             path (str): The directory where the models will be saved.
@@ -61,7 +39,6 @@ class UninformedStudents(nn.Module):
         if not os.path.exists(path):
             os.makedirs(path)
         torch.save(self.teacher.state_dict(), os.path.join(path, 'teacher.pth'))
-        torch.save(self.teacher_feature_extractor.state_dict(), os.path.join(path, 'teacher_feature_extractor.pth'))
         for idx, student in enumerate(self.students):
             torch.save(student.state_dict(), os.path.join(path, f'student_{idx}.pth'))
         
@@ -83,13 +60,12 @@ class UninformedStudents(nn.Module):
 
     def load(self, path):
         """
-        Loads the teacher, teacher feature extractor, and student models from the specified path.
+        Loads the teacher, and student models from the specified path.
 
         Args:
             path (str): The directory from where the models will be loaded.
         """
         self.teacher.load_state_dict(torch.load(os.path.join(path, 'teacher.pth')))
-        self.teacher_feature_extractor.load_state_dict(torch.load(os.path.join(path, 'teacher_feature_extractor.pth')))
         for idx, student in enumerate(self.students):
             student.load_state_dict(torch.load(os.path.join(path, f'student_{idx}.pth')))
         
@@ -111,7 +87,6 @@ class UninformedStudents(nn.Module):
         """
         self.device = device
         self.teacher.to(device)
-        self.teacher_feature_extractor.to(device)
         for student in self.students:
             student.to(device)
 
@@ -127,7 +102,7 @@ class UninformedStudents(nn.Module):
             torch.Tensor: The total loss.
         """
         # Forward pass of the teacher - compute once for all students
-        teacher_outputs = self.teacher_feature_extractor(patches).detach().squeeze()
+        teacher_outputs = self.teacher(patches).detach().squeeze()
         
         # Preallocate tensor for student outputs.
         # We assume each student's output (after squeeze) matches teacher_outputs shape.
@@ -169,7 +144,7 @@ class UninformedStudents(nn.Module):
             torch.Tensor: The total loss.
         """
 
-        teacher_outputs = self.teacher_feature_extractor(x).detach()
+        teacher_outputs = self.teacher(x).detach()
 
         # Preallocate tensor for student outputs.
         # We assume each student's output (after squeeze) matches teacher_outputs shape.
@@ -223,7 +198,7 @@ class UninformedStudents(nn.Module):
         """
         
         # Forward pass of the teacher model
-        teacher_outputs = self.teacher_feature_extractor(image).detach().squeeze()
+        teacher_outputs = self.teacher(image).detach().squeeze()
         teacher_outputs_expanded = teacher_outputs.expand(len(self.students), *teacher_outputs.shape)
         
         # Forward pass of each student model
@@ -400,6 +375,7 @@ class STFPM(nn.Module):
             return anomaly_score
 
 class ClassConditionalUninformedStudents(UninformedStudents):
+    
     """
     A detector model that trains multiple student models to detect adversarial examples with class conditioning.
 
@@ -421,7 +397,7 @@ class ClassConditionalUninformedStudents(UninformedStudents):
             [param for student in self.students for param in student.parameters()], lr=lr
         )
         self.to(device)
-        print("Teacher: " + str(self.teacher_feature_extractor))
+        print("Teacher: " + str(self.teacher))
         print("Students: " + str(self.students))
 
     def train_patch(self, patches, label=None):
@@ -438,7 +414,7 @@ class ClassConditionalUninformedStudents(UninformedStudents):
         if label is None:
             raise ValueError("Class label must be provided for class-conditional training.")
         # Forward pass of the teacher
-        teacher_outputs = self.teacher_feature_extractor(patches).detach().squeeze()
+        teacher_outputs = self.teacher(patches).detach().squeeze()
 
         # Select the student model corresponding to the given label
         students = self.students[label.cpu().item()*self.num_students:(label.cpu().item()+1)*self.num_students]
@@ -484,7 +460,7 @@ class ClassConditionalUninformedStudents(UninformedStudents):
         for patch in patches:
             patch = patch.to(self.device)
             # Forward pass of the teacher model
-            teacher_output = self.teacher_feature_extractor(patch).detach().squeeze()
+            teacher_output = self.teacher(patch).detach().squeeze()
             teacher_outputs.append(teacher_output)
 
             # Forward pass of each student model
@@ -509,3 +485,38 @@ class ClassConditionalUninformedStudents(UninformedStudents):
         predictive_uncertainty = student_flat.var(dim=0)
 
         return regression_error.item(), predictive_uncertainty.mean().item()
+    
+def initialize_detector(config, dataset, device):
+    """
+    Initialize the appropriate detector model based on configuration.
+    
+    Args:
+        config (dict): Configuration dictionary
+        dataset: Dataset object
+        device: PyTorch device
+    
+    Returns:
+        detector: Initialized detector model
+    """
+    method = config['method']
+    
+    if method == 'STFPM':
+        detector = STFPM(dataset, device, config['train']['learning_rate'])
+    elif method == 'ClassConditionalUninformedStudents':
+        detector = ClassConditionalUninformedStudents(
+            config['num_students'], 
+            dataset, 
+            patch_size=config['patch_size'], lr=config['train']['learning_rate'],
+            device=device
+        )
+    elif method == 'UninformedStudents':
+        detector = UninformedStudents(
+            config['num_students'], 
+            dataset, 
+            patch_size=config['patch_size'], lr=config['train']['learning_rate'],
+            device=device
+        )
+    else:
+        raise ValueError(f"Unknown method: {method}")
+    
+    return detector

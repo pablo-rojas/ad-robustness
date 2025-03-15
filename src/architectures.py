@@ -435,7 +435,7 @@ def unwarp_pool(x, s):
     x = x.view(B, C, H * s1, W * s2)
     return x
 
-def modify_resnet_for_dense(model, cifar=False):
+def modify_resnet_for_dense(model):
     model.conv1.stride = (1, 1)
     if hasattr(model, 'maxpool'):
         model.maxpool.stride = (1, 1)
@@ -451,8 +451,6 @@ def modify_resnet_for_dense(model, cifar=False):
         #if layer[0].downsample is not None:
             layer[0].downsample[0].stride = (1, 1)
     return model
-
-
 
 def get_dense_net():
     """

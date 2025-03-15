@@ -1,7 +1,6 @@
 import torch
 import torchvision.models as models
 from collections import OrderedDict
-from src.detector import *
 
 try:
     # If this is imported as a module (from src)
@@ -53,15 +52,6 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None, pretrained=
         model = ResNet18(dim=1)
         if pretrained and path is not None:
             checkpoint = torch.load(path, map_location=device, weights_only=True)
-            # state_dict = checkpoint['net']
-
-            # if next(iter(state_dict)).startswith("module."):
-            #     new_state_dict = OrderedDict()
-            #     for key, value in state_dict.items():
-            #         new_key = key.replace("module.", "")
-            #         new_state_dict[new_key] = value
-            #     state_dict = new_state_dict
-
             model.load_state_dict(checkpoint)
 
     elif dataset=='imagenet':
@@ -77,41 +67,45 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None, pretrained=
     model.eval()
     
     return model
+
+def resnet18_feature_extractor(device='cpu', dataset='imagenet', path="models/resnet18_imagenet.pth", freeze=True):
     
-def initialize_detector(config, dataset, device):
-    """
-    Initialize the appropriate detector model based on configuration.
-    
-    Args:
-        config (dict): Configuration dictionary
-        dataset: Dataset object
-        device: PyTorch device
-    
-    Returns:
-        detector: Initialized detector model
-    """
-    method = config['method']
-    
-    if method == 'STFPM':
-        detector = STFPM(dataset, device, config['train']['learning_rate'])
-    elif method == 'ClassConditionalUninformedStudents':
-        detector = ClassConditionalUninformedStudents(
-            config['num_students'], 
-            dataset, 
-            patch_size=config['patch_size'], lr=config['train']['learning_rate'],
-            device=device
-        )
-    elif method == 'UninformedStudents':
-        detector = UninformedStudents(
-            config['num_students'], 
-            dataset, 
-            patch_size=config['patch_size'], lr=config['train']['learning_rate'],
-            device=device
-        )
+    if dataset=='cifar':
+        teacher_feature_extractor = DenseCIFARResNet18(BasicBlock, [2, 2, 2, 2], dim=3).to(device) # Note how the use of this class allows to read the deafault resnet model, but changes the padding and stride, and skips the lineas and avgpool layers at the end
+        checkpoint = torch.load(path, map_location=device, weights_only=True)
+        state_dict = checkpoint['net']
+        if next(iter(state_dict)).startswith("module."):
+            new_state_dict = OrderedDict()
+            for key, value in state_dict.items():
+                new_key = key.replace("module.", "")
+                new_state_dict[new_key] = value
+            state_dict = new_state_dict
+
+        teacher_feature_extractor.load_state_dict(state_dict)
+
+    elif dataset=='mnist':
+        teacher_feature_extractor = DenseCIFARResNet18(BasicBlock, [2, 2, 2, 2], dim=1).to(device) # Note how the use of this class allows to read the deafault resnet model, but changes the padding and stride, and skips the lineas and avgpool layers at the end
+        checkpoint = torch.load(path, map_location=device, weights_only=True)
+
+        teacher_feature_extractor.load_state_dict(checkpoint)
+
+    elif dataset=='imagenet':
+        resnet18 = models.resnet18(weights='IMAGENET1K_V1').to(device)
+        resnet18 = modify_resnet_for_dense(resnet18)
+        teacher_feature_extractor = DenseResNet18(resnet18)
+
     else:
-        raise ValueError(f"Unknown method: {method}")
+        raise ValueError(f"Dataset {dataset} not supported")
     
-    return detector
+    if freeze:
+        # Freeze the feature extractor and set to evaluation mode
+        for param in teacher_feature_extractor.parameters():
+            param.requires_grad = False
+        teacher_feature_extractor = teacher_feature_extractor.eval()
+        teacher_feature_extractor.eval()
+    
+
+    return teacher_feature_extractor.to(device)
 
 def get_patch_descriptor(patch_size, dim=3):
     """
@@ -151,69 +145,24 @@ def initialize_us_models(num_students, dataset, patch_size, device='cpu'):
         pretrained (bool): Whether to use pretrained weights for teacher model
     
     Returns:
-        tuple: (teacher_model, teacher_feature_extractor, student_models)
-            - teacher_model: Complete ResNet18 classifier
-            - teacher_feature_extractor: ResNet18 without the fully connected layer
-            - student_models: List of randomly initialized student models
+        tuple: (teacher, student)
+            - teacher: ResNet18 without the fully connected layer
+            - student: List of randomly initialized student models
     """
     # Determine dataset name if passed as object
     ds_name = dataset.ds_name if hasattr(dataset, 'ds_name') else dataset
 
-    # Initialize teacher model using resnet18_classifier
-    teacher_model = resnet18_classifier(device=device, dataset=ds_name, 
-                                        path=model_paths[ds_name])
     
-    # Create feature extractor (removing the fully connected layer)
-    teacher_feature_extractor = torch.nn.Sequential(*list(teacher_model.children())[:-1])
-    teacher_feature_extractor.eval()
-    
+    # Initialize teacher model with pretrained weights
+    teacher = resnet18_feature_extractor(device, ds_name, model_paths[ds_name])
+
     # Initialize student models with random weights using Patch17Descriptor
-    student_models = []
+    students = []
     for _ in range(num_students):
-        student_model = get_patch_descriptor(patch_size=patch_size, dim=1 if ds_name == 'mnist' else 3)
-        student_model.to(device)
-        student_models.append(student_model)
+        student = get_patch_descriptor(patch_size=patch_size, dim=1 if ds_name == 'mnist' else 3)
+        student.to(device)
+        students.append(student)
     
-    return teacher_model, teacher_feature_extractor, student_models
-
-def main():
-    # Set device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
-    
-    # Initialize models for each dataset
-    datasets = ['cifar', 'mnist', 'imagenet']
-    
-    for dataset in datasets:
-        print(f"\n{'='*50}")
-        print(f"Initializing model for {dataset.upper()} dataset")
-        print(f"{'='*50}")
-        
-        # Get model path
-        path = model_paths[dataset]
-        print(f"Model path: {path if path else 'Using pretrained weights from torchvision'}")
-        
-        try:
-            # Initialize the model
-            model = resnet18_classifier(device=device, dataset=dataset)
-            
-            # Print model information
-            print(f"Model type: {type(model).__name__}")
-            
-            # Print parameter count
-            total_params = sum(p.numel() for p in model.parameters())
-            trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-            print(f"Total parameters: {total_params:,}")
-            print(f"Trainable parameters: {trainable_params:,}")
-            
-            # Create feature extractor (similar to the selected line)
-            feature_extractor = torch.nn.Sequential(*list(model.children())[:-1])
-            print(f"Feature extractor: " + str(feature_extractor))
-            
-        except Exception as e:
-            print(f"Error initializing model for {dataset}: {e}")
+    return teacher, students
 
 
-
-if __name__ == "__main__":
-    main()

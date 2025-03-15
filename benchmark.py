@@ -11,7 +11,7 @@ from src.dataset_utils import get_dataset
 from src.detector import UninformedStudents, ClassConditionalUninformedStudents
 from src.model_utils import resnet18_classifier
 from src.eval_utils import *
-from src.misc_utils import load_config, save_image, setup_attack_kwargs
+from src.misc_utils import load_config, setup_attack_kwargs
 
 # Import ACGAN modules.
 from ACGAN.GAN.acgan_1 import ACGAN
@@ -254,7 +254,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Test ACGAN with PGD adversarial attack and compute anomaly score metrics"
     )
-    parser.add_argument('--config', type=str, default='cfg/cifar_benchmark.json',
+    parser.add_argument('--config', type=str, default='cfg/mnist_benchmark.json',
                         help='Path to the configuration file.')
     args = parser.parse_args()
 
