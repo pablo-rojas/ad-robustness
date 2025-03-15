@@ -8,11 +8,11 @@ from tqdm import tqdm
 from torch import nn
 import numpy as np
 from ACGAN.attacks.FGSM import FGSM
-from src.eval_utils import partial_auc, get_target
+from src.eval_utils import partial_auc, get_target, singe_discriminator_statistic
 
 # Import your dataset class from your own code
 from src.dataset_utils import get_dataset
-from src.model_utils import resnet18_classifier, singe_discriminator_statistic
+from src.model_utils import resnet18_classifier
 
 # Import the CNN and ACGAN definitions from the ACGAN folder
 from ACGAN.GAN.acgan_1 import ACGAN

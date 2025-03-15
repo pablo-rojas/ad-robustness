@@ -1,6 +1,7 @@
 import torch
 import torchvision.models as models
 from collections import OrderedDict
+from src.detector import *
 
 try:
     # If this is imported as a module (from src)
@@ -77,7 +78,40 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None, pretrained=
     
     return model
     
-# ...existing code...
+def initialize_detector(config, dataset, device):
+    """
+    Initialize the appropriate detector model based on configuration.
+    
+    Args:
+        config (dict): Configuration dictionary
+        dataset: Dataset object
+        device: PyTorch device
+    
+    Returns:
+        detector: Initialized detector model
+    """
+    method = config['method']
+    
+    if method == 'STFPM':
+        detector = STFPM(dataset, device, config['train']['learning_rate'])
+    elif method == 'ClassConditionalUninformedStudents':
+        detector = ClassConditionalUninformedStudents(
+            config['num_students'], 
+            dataset, 
+            patch_size=config['patch_size'], lr=config['train']['learning_rate'],
+            device=device
+        )
+    elif method == 'UninformedStudents':
+        detector = UninformedStudents(
+            config['num_students'], 
+            dataset, 
+            patch_size=config['patch_size'], lr=config['train']['learning_rate'],
+            device=device
+        )
+    else:
+        raise ValueError(f"Unknown method: {method}")
+    
+    return detector
 
 def get_patch_descriptor(patch_size, dim=3):
     """
@@ -104,73 +138,6 @@ def get_patch_descriptor(patch_size, dim=3):
     else:
         supported_sizes = [7, 17, 33, 65]
         raise ValueError(f"Unsupported patch size: {patch_size}. Supported sizes are: {supported_sizes}")
-    
-def extract_patches(image, patch_size, pad_image=False):
-    """
-    Extracts patches from an image tensor such that each pixel is the center of a patch.
-    Patches will be overlapping.
-
-    Args:
-        image (torch.Tensor): Input tensor with shape [batch_size, channels, height, width].
-        patch_size (int): The size of each patch (preferably odd for exact centering).
-        pad_image (bool): If True, pads the image before extracting patches. If False, 
-                          only extracts patches where the full patch fits within the image.
-
-    Returns:
-        torch.Tensor: Extracted patches with shape [total_patches, channels, patch_size, patch_size],
-                      where total_patches = batch_size * height * width if pad_image=True,
-                      or batch_size * (height-patch_size+1) * (width-patch_size+1) if pad_image=False.
-    """
-    if pad_image:
-        # Calculate the padding amount (pad on all sides)
-        pad = patch_size // 2
-
-        # Pad the image to ensure each pixel (including borders) is the center of a patch.
-        # Here we use 'reflect' padding, but you could use 'constant' or 'replicate' as desired.
-        padded = F.pad(image, (pad, pad, pad, pad), mode='reflect')
-        
-        # Use unfold to extract patches with a sliding window of stride 1.
-        # The resulting shape is [batch_size, channels, height, width, patch_size, patch_size].
-        patches = padded.unfold(2, patch_size, 1).unfold(3, patch_size, 1)
-        
-        # Combine the spatial dimensions (height and width) into one patch dimension.
-        patches = patches.contiguous().view(image.size(0), image.size(1), -1, patch_size, patch_size)
-    else:
-        # Extract patches without padding - only where the full patch fits within the image
-        # The resulting shape is [batch_size, channels, height-patch_size+1, width-patch_size+1, patch_size, patch_size]
-        patches = image.unfold(2, patch_size, 1).unfold(3, patch_size, 1)
-        
-        # Combine the spatial dimensions into one patch dimension
-        patches = patches.contiguous().view(image.size(0), image.size(1), -1, patch_size, patch_size)
-
-    # Permute so that the patch dimension comes immediately after the batch dimension.
-    patches = patches.permute(0, 2, 1, 3, 4)
-
-    # Flatten the batch and patch dimensions.
-    batch_size, num_patches, channels, ph, pw = patches.shape
-    patches = patches.reshape(batch_size * num_patches, channels, ph, pw)
-
-    return patches
-
-
-def singe_discriminator_statistic(discriminator_output, target_label):
-    """
-    Converts the output of the discriminator into a single statistic, as described in the paper.
-    On top of that, for simplicity of comparisson, I changed the sign of the output to be positive, 
-    and converted all negative results to 100 (a very large number)
-
-    Args:
-        discriminator_output (torch.Tensor, torch.Tensor): Output of the discriminator.
-        target_label (int): Target label of the attack.
-
-    Returns:
-        torch.Tensor: The extracted patches.
-    """
-    aux_prob, aux_out = discriminator_output
-    s_d = torch.log(aux_prob) + torch.log(aux_out[:, target_label])
-    if torch.isneginf(s_d).any():
-        return torch.tensor(-100.0, device=s_d.device)
-    return -s_d
     
 def initialize_us_models(num_students, dataset, patch_size, device='cpu'):
     """
@@ -245,6 +212,8 @@ def main():
             
         except Exception as e:
             print(f"Error initializing model for {dataset}: {e}")
+
+
 
 if __name__ == "__main__":
     main()

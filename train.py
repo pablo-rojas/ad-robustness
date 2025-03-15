@@ -3,55 +3,17 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 import argparse
 
-from src.misc_utils import flatten_dict
+from src.model_utils import resnet18_classifier, model_paths, initialize_detector
+from src.misc_utils import *
 from src.detector import STFPM, ClassConditionalUninformedStudents, UninformedStudents
 from src.dataset_utils import get_dataset
-from ACGAN.attacks.FGSM import FGSM
 from src.eval_utils import *
 
 import numpy as np
-from src.model_utils import resnet18_classifier, model_paths
+
+from ACGAN.attacks.FGSM import FGSM
 import time
 
-def initialize_detector(config, dataset, device):
-    """
-    Initialize the appropriate detector model based on configuration.
-    
-    Args:
-        config (dict): Configuration dictionary
-        dataset: Dataset object
-        device: PyTorch device
-    
-    Returns:
-        detector: Initialized detector model
-    """
-    method = config['method']
-    
-    if method == 'STFPM':
-        detector = STFPM(dataset, device, config['train']['learning_rate'])
-    elif method == 'ClassConditionalUninformedStudents':
-        detector = ClassConditionalUninformedStudents(
-            config['num_students'], 
-            dataset, 
-            patch_size=config['patch_size'], lr=config['train']['learning_rate'],
-            device=device
-        )
-    elif method == 'UninformedStudents':
-        detector = UninformedStudents(
-            config['num_students'], 
-            dataset, 
-            patch_size=config['patch_size'], lr=config['train']['learning_rate'],
-            device=device
-        )
-    else:
-        raise ValueError(f"Unknown method: {method}")
-    
-    return detector
-
-def load_config(config_path):
-    with open(config_path, 'r') as f:
-        config = json.load(f)
-    return config
 
 def train(config, device, norm, writer, train_loader, detector, test_loader=None):
     
@@ -248,7 +210,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate the detector model.")
-    parser.add_argument('--config', type=str, default='cfg/cifar_train_us.json', help='Path to the configuration file.')
+    parser.add_argument('--config', type=str, default='cfg/mnist_train_us.json', help='Path to the configuration file.')
     args = parser.parse_args()
 
     main(args)

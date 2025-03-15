@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 
 from src.dataset_utils import denormalize_image
 
+
 def save_results(save_folder, results, range=(-3, 17), bins=100):    
     # Ensure the save directory exists
     os.makedirs(save_folder, exist_ok=True)
@@ -120,7 +121,6 @@ def save_roc_curve(save_folder, nat_list, adv_list):
     plt.savefig(os.path.join(save_folder, "roc_curve.png"))
     plt.close()
 
-
 def partial_auc(anomaly_free_scores, anomalous_scores, fpr_threshold=0.2):
     """
     Calculate the partial AUC up to a given false positive rate (FPR) threshold.
@@ -176,22 +176,21 @@ def get_target(labels):
         a = random.randint(0, 9)
     return torch.tensor([a])
 
-def load_config(config_path):
-    with open(config_path, 'r') as f:
-        config = json.load(f)
-    return config
+def singe_discriminator_statistic(discriminator_output, target_label):
+    """
+    Converts the output of the discriminator into a single statistic, as described in the paper.
+    On top of that, for simplicity of comparisson, I changed the sign of the output to be positive, 
+    and converted all negative results to 100 (a very large number)
 
-def setup_attack_kwargs(config):
+    Args:
+        discriminator_output (torch.Tensor, torch.Tensor): Output of the discriminator.
+        target_label (int): Target label of the attack.
+
+    Returns:
+        torch.Tensor: The extracted patches.
     """
-    Set up PGD attack parameters based on the configuration.
-    """
-    if config['type'] == 'pgd':
-        attack_kwargs = {
-            'constraint': config['constraint'],
-            'eps': config['epsilon'],
-            'step_size': 2.5 * config['epsilon'] / config['iterations'], #config['step_size'],    # Modification to imitate original PGD paper
-            'iterations': config['iterations'],
-            'targeted': config['targeted'],
-            'custom_loss': None
-        }
-    return attack_kwargs
+    aux_prob, aux_out = discriminator_output
+    s_d = torch.log(aux_prob) + torch.log(aux_out[:, target_label])
+    if torch.isneginf(s_d).any():
+        return torch.tensor(-100.0, device=s_d.device)
+    return -s_d

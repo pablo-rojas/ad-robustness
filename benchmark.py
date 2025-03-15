@@ -5,13 +5,13 @@ import argparse
 
 import numpy as np
 from tqdm import tqdm
-import random
 
 # Import dataset and evaluation utilities.
 from src.dataset_utils import get_dataset
 from src.detector import UninformedStudents, ClassConditionalUninformedStudents
-from src.model_utils import singe_discriminator_statistic, resnet18_classifier
+from src.model_utils import resnet18_classifier
 from src.eval_utils import *
+from src.misc_utils import load_config, save_image, setup_attack_kwargs
 
 # Import ACGAN modules.
 from ACGAN.GAN.acgan_1 import ACGAN
@@ -22,7 +22,6 @@ from ACGAN.attacks.FGSM import FGSM
 # Import PGD attacker.
 from robustness import attacker
 
-from torch.utils.data import Sampler
 
 
 def main(args):
