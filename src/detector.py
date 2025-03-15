@@ -4,6 +4,8 @@ import torch.nn as nn
 from src.model_utils import extract_patches, initialize_us_models, resnet18_classifier
 import torchvision.models as models
 import torch.nn.functional as F
+from src.architectures import modify_resnet_for_dense, DenseResNet18, DenseCIFARResNet18, BasicBlock
+from collections import OrderedDict
 
 
 class UninformedStudents(nn.Module):
@@ -22,7 +24,25 @@ class UninformedStudents(nn.Module):
     def __init__(self, num_students, dataset, patch_size=5, lr=0.0001, weight_decay=0, device='cpu'):
         super(UninformedStudents, self).__init__()
         self.patch_size = patch_size
-        self.teacher, self.teacher_feature_extractor, self.students = initialize_us_models(num_students, dataset, patch_size, device)
+        self.teacher, _, self.students = initialize_us_models(num_students, dataset, patch_size, device)
+        #base_model = modify_resnet_for_dense(self.teacher, cifar=(dataset.ds_name != 'imagenet'))
+        resnet_cifar = DenseCIFARResNet18(BasicBlock, [2, 2, 2, 2], dim=3).to(device)
+        checkpoint = torch.load("models/resnet18_cifar.pth", map_location=device, weights_only=True)
+        state_dict = checkpoint['net']
+        if next(iter(state_dict)).startswith("module."):
+            new_state_dict = OrderedDict()
+            for key, value in state_dict.items():
+                new_key = key.replace("module.", "")
+                new_state_dict[new_key] = value
+            state_dict = new_state_dict
+
+        resnet_cifar.load_state_dict(state_dict)
+        self.teacher_feature_extractor = resnet_cifar
+        #self.teacher_feature_extractor = nn.Sequential(*list(resnet_cifar.children())[:-1]) # Note how this is not strictly necessary, as in DenseCIFARResNet18 I already skip the avg_pool and linear layers in the forward function
+        for param in self.teacher_feature_extractor.parameters():
+            param.requires_grad = False
+        self.teacher_feature_extractor = self.teacher_feature_extractor.eval()
+        #self.teacher_feature_extractor = DenseResNet18(base_model).eval()
         self.criterion = nn.MSELoss()
         self.optimizer = torch.optim.Adam(
             [param for student in self.students for param in student.parameters()], lr=lr, weight_decay=weight_decay
@@ -121,10 +141,6 @@ class UninformedStudents(nn.Module):
             # Compute output and squeeze to match teacher_outputs shape.
             all_student_outputs[i] = student(patches).squeeze()
 
-        # Instead of expanding teacher_outputs explicitly, unsqueeze so broadcasting happens.
-        # This gives a shape [1, batch_size, features] which will broadcast to [num_students, batch_size, features].
-        #teacher_outputs_unsqueezed = teacher_outputs.unsqueeze(0)
-
         teacher_outputs_unsqueezed = teacher_outputs.unsqueeze(0).expand(num_students, *teacher_outputs.shape)
 
 
@@ -152,14 +168,29 @@ class UninformedStudents(nn.Module):
         Returns:
             torch.Tensor: The total loss.
         """
-        # Extract patches from all images in the batch
-        patches = extract_patches(x, self.patch_size)
+
+        teacher_outputs = self.teacher_feature_extractor(x).detach()
+
+        # Preallocate tensor for student outputs.
+        # We assume each student's output (after squeeze) matches teacher_outputs shape.
+        num_students = len(self.students)
+        output_shape = teacher_outputs.shape  # e.g., (batch_size, features)
+        all_student_outputs = torch.empty((num_students,) + output_shape, 
+                                        device=x.device, dtype=teacher_outputs.dtype)
         
-        # Reshape to batch format
-        patches = patches.view(-1, x.size(1), self.patch_size, self.patch_size)
         
-        # Train on patches
-        loss = self.train_patch(patches, labels)
+        # Fill the preallocated tensor with each student's output
+        for i, student in enumerate(self.students):
+            # Compute output and squeeze to match teacher_outputs shape.
+            all_student_outputs[i] = student(x).squeeze()
+
+        teacher_outputs_unsqueezed = teacher_outputs.unsqueeze(0).expand(num_students, *teacher_outputs.shape)
+
+        #student_outputs = torch.stack([output.squeeze() for output in student_outputs])
+        loss = self.criterion(all_student_outputs, teacher_outputs_unsqueezed)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
         return loss
 
@@ -190,22 +221,19 @@ class UninformedStudents(nn.Module):
         Returns:
             torch.Tensor, torch.Tensor: The regression error and predictive uncertainty.
         """
-        # Extract patches from the input image
-        # This returns a 4D tensor (num_patches, C, patch_size, patch_size)
-        patches = extract_patches(image, self.patch_size)
         
-        # We can process all patches in a single batch for efficiency
         # Forward pass of the teacher model
-        teacher_outputs = self.teacher_feature_extractor(patches).detach().squeeze()
+        teacher_outputs = self.teacher_feature_extractor(image).detach().squeeze()
+        teacher_outputs_expanded = teacher_outputs.expand(len(self.students), *teacher_outputs.shape)
         
         # Forward pass of each student model
-        all_student_outputs = torch.stack([student(patches).squeeze() for student in self.students])
+        all_student_outputs = torch.stack([student(image).squeeze() for student in self.students])
         
         # Calculate mean of student outputs across all students
         students_mean = all_student_outputs.mean(dim=0)
         
         # Calculate regression error (squared difference between mean student output and teacher output)
-        squared_diffs = (students_mean - teacher_outputs) ** 2
+        squared_diffs = (students_mean - teacher_outputs_expanded) ** 2
         regression_error = squared_diffs.mean()
         
         # Calculate predictive uncertainty (variance across student models)

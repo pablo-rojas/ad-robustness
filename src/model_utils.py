@@ -1,5 +1,4 @@
 import torch
-from torch import nn
 import torchvision.models as models
 from collections import OrderedDict
 
@@ -106,34 +105,51 @@ def get_patch_descriptor(patch_size, dim=3):
         supported_sizes = [7, 17, 33, 65]
         raise ValueError(f"Unsupported patch size: {patch_size}. Supported sizes are: {supported_sizes}")
     
-def extract_patches(image, patch_size):
+def extract_patches(image, patch_size, pad_image=False):
     """
-    Extracts patches from an image tensor and returns them in a flat format.
-    
+    Extracts patches from an image tensor such that each pixel is the center of a patch.
+    Patches will be overlapping.
+
     Args:
         image (torch.Tensor): Input tensor with shape [batch_size, channels, height, width].
-        patch_size (int): The size of each patch.
-    
+        patch_size (int): The size of each patch (preferably odd for exact centering).
+        pad_image (bool): If True, pads the image before extracting patches. If False, 
+                          only extracts patches where the full patch fits within the image.
+
     Returns:
         torch.Tensor: Extracted patches with shape [total_patches, channels, patch_size, patch_size],
-                      where total_patches = batch_size * num_patches.
+                      where total_patches = batch_size * height * width if pad_image=True,
+                      or batch_size * (height-patch_size+1) * (width-patch_size+1) if pad_image=False.
     """
-    # Unfold the image to extract patches.
-    # This results in a tensor of shape [batch_size, channels, num_patches_h, num_patches_w, patch_size, patch_size]
-    patches = image.unfold(2, patch_size, patch_size).unfold(3, patch_size, patch_size)
-    
-    # Combine the two patch dimensions into one.
-    # New shape: [batch_size, channels, num_patches, patch_size, patch_size]
-    patches = patches.contiguous().view(image.size(0), image.size(1), -1, patch_size, patch_size)
-    
-    # Permute to bring the patch dimension next to the batch dimension.
-    # New shape: [batch_size, num_patches, channels, patch_size, patch_size]
+    if pad_image:
+        # Calculate the padding amount (pad on all sides)
+        pad = patch_size // 2
+
+        # Pad the image to ensure each pixel (including borders) is the center of a patch.
+        # Here we use 'reflect' padding, but you could use 'constant' or 'replicate' as desired.
+        padded = F.pad(image, (pad, pad, pad, pad), mode='reflect')
+        
+        # Use unfold to extract patches with a sliding window of stride 1.
+        # The resulting shape is [batch_size, channels, height, width, patch_size, patch_size].
+        patches = padded.unfold(2, patch_size, 1).unfold(3, patch_size, 1)
+        
+        # Combine the spatial dimensions (height and width) into one patch dimension.
+        patches = patches.contiguous().view(image.size(0), image.size(1), -1, patch_size, patch_size)
+    else:
+        # Extract patches without padding - only where the full patch fits within the image
+        # The resulting shape is [batch_size, channels, height-patch_size+1, width-patch_size+1, patch_size, patch_size]
+        patches = image.unfold(2, patch_size, 1).unfold(3, patch_size, 1)
+        
+        # Combine the spatial dimensions into one patch dimension
+        patches = patches.contiguous().view(image.size(0), image.size(1), -1, patch_size, patch_size)
+
+    # Permute so that the patch dimension comes immediately after the batch dimension.
     patches = patches.permute(0, 2, 1, 3, 4)
-    
+
     # Flatten the batch and patch dimensions.
     batch_size, num_patches, channels, ph, pw = patches.shape
     patches = patches.reshape(batch_size * num_patches, channels, ph, pw)
-    
+
     return patches
 
 

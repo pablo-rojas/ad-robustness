@@ -4,8 +4,11 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
 import os
 
-results_us = np.load("./results/benchmark_best_20/fgsm_inf_0.05/uninformed_students/results.npy", allow_pickle=True).item()
-results_acgan = np.load("./results/benchmark_best_20/fgsm_inf_0.05/acgan/results.npy",allow_pickle=True).item()
+results_dir = "./results/benchmark_cifar_ens_today/fgsm_inf_0.05"
+results_dir = "./results/benchmark_cifar_today/pgd_inf_0.1"
+
+results_us = np.load(results_dir + "/uninformed_students/results.npy", allow_pickle=True).item()
+results_acgan = np.load(results_dir + "/acgan/results.npy",allow_pickle=True).item()
 
 
 anomaly_free_scores = np.array(results_us['nat_list'])
@@ -39,5 +42,5 @@ plt.xlabel('False Positive Rate')
 plt.ylabel('True Positive Rate')
 plt.title('Receiver Operating Characteristic (ROC) Curve')
 plt.legend(loc="lower right")
-plt.savefig(os.path.join("./", "roc_curve_fgsm.png"))
+plt.savefig(os.path.join("./", "roc_curve_pgd_0.1.png"))
 plt.close()

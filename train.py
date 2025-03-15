@@ -3,6 +3,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 import argparse
 
+from src.misc_utils import flatten_dict
 from src.detector import STFPM, ClassConditionalUninformedStudents, UninformedStudents
 from src.dataset_utils import get_dataset
 from ACGAN.attacks.FGSM import FGSM
@@ -95,6 +96,7 @@ def train(config, device, norm, writer, train_loader, detector, test_loader=None
         if test_loader is None:
             print(f"Epoch {epoch} time: {epoch_time:.1f}s, Est. time left: {estimated_time_left/60:.1f}min")
         else:
+            
             results = test(detector, test_loader, device, norm, n_samples=config['train']['test_samples'])
             if results['pAUC'] > best_pAUC:
                 best_pAUC = results['pAUC']
@@ -223,7 +225,8 @@ def main(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Initialize the Tensorboard writer
-    writer = SummaryWriter(comment=f"_{dataset_name}")
+    writer = SummaryWriter()
+    writer.add_hparams(flatten_dict(config), {}, run_name='')
 
     # Get the dataset and create data loaders
     dataset = get_dataset(dataset_name)
