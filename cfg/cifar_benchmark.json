@@ -1,8 +1,8 @@
 {
-    "experiment_name": "benchmark_cifar",
+    "experiment_name": "benchmark_cifar_ensTrue",
     "target_model_path": "models/resnet18_cifar.pth",
     "acgan_path": "models/cifar_acgan",
-    "uninformed_students_path": "models/cifar_us2_best",
+    "uninformed_students_path": "models/cifar_us_fast_best",
     "dataset": "cifar",
     "patch_size": 7,
     "num_students": 10,
@@ -62,8 +62,8 @@
                 "step_size": 0.01
             }           
         ],
-        "ensure_succesful_attack": false,
-        "samples": 500,
+        "ensure_succesful_attack": true,
+        "samples": 5000,
         "save": false
     }
 }

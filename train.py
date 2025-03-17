@@ -13,7 +13,7 @@ from src.misc_utils import *
 from ACGAN.attacks.FGSM import FGSM
 
 
-def train(config, device, norm, writer, train_loader, detector, test_loader=None):
+def train(config, device, norm, writer, train_loader, detector, val_loader=None):
     
     # Parameters from JSON
     save_path = config['model_path']
@@ -24,27 +24,29 @@ def train(config, device, norm, writer, train_loader, detector, test_loader=None
     i = 0
     epoch = 1
     best_pAUC = 0
+    best_epoch = 1
 
     # Train the model for the specified number of epochs
     start_time = time.time()
     while i < steps:
         epoch_start = time.time()
-        for _, (images, labels) in enumerate(train_loader):
+        for images, labels in train_loader:
             images = norm(images).to(device)
+            labels = labels.to(device)
+
             loss = detector.train_step(images, labels)
             writer.add_scalar('Loss/train', loss.item(), i)
-            i += 1
 
             if val_interval is not None and i % val_interval == 0:
-                if test_loader is not None:
-                    results = test(detector, test_loader, device, norm)
-                    if results['pAUC'] > best_pAUC:
-                        best_pAUC = results['pAUC']
-                        detector.save(save_path+'_best')
-                        print("Model saved at", save_path+'_best')
+                results = val(detector, val_loader, device, norm)
+                writer.add_scalar('Metrics/pAUC', results['pAUC'], i)
 
-                    writer.add_scalar('Metrics/pAUC', results['pAUC'], i)
-                    
+                if results['pAUC'] > best_pAUC:
+                    best_pAUC = results['pAUC']
+                    detector.save(save_path+'_best')
+                    print("Model saved at", save_path+'_best')
+            
+            i += 1
             if i >= steps:
                 break
 
@@ -53,7 +55,7 @@ def train(config, device, norm, writer, train_loader, detector, test_loader=None
         steps_left = steps - i
         estimated_time_left = (steps_left * elapsed_time) / i if i > 0 else 0
             
-        results = test(detector, test_loader, device, norm, n_samples=config['train']['test_samples'])
+        results = val(detector, val_loader, device, norm, n_samples=config['train']['test_samples'])
         detector.save(save_path+'_last')
 
         # Save the model if the pAUC is better than the previous best
@@ -61,39 +63,36 @@ def train(config, device, norm, writer, train_loader, detector, test_loader=None
             best_pAUC = results['pAUC']
             detector.save(save_path+'_best')
         
-        # End training if the pAUC is 0.2 (max) or 0.1 worse than the best pAUC
-        if best_pAUC >= 0.2 or results['pAUC'] < best_pAUC - 0.02:
+        # End training if the pAUC is more than 0.02 wors than the best pAUC, or it has not improved in the last 5 epochs
+        if (results['pAUC'] < best_pAUC - 0.02) or (epoch - best_epoch > 5):
             print("Early stopping")
             break
-        
 
         writer.add_scalar('Metrics/pAUC', results['pAUC'], i)
         print(f"Progress: {i}/{steps} steps ({(i/steps)*100:.1f}%)")
         print(f"Epoch: {epoch}, pAUC: {results['pAUC']}, time: {epoch_time:.1f}s, Est. time left: {estimated_time_left/60:.1f}min")
         epoch += 1
 
-def test(detector, test_loader, device, norm, n_samples=100, epsilon=0.05):
-    dataset = test_loader.dataset
+def val(detector, val_loader, device, norm, n_samples=100, epsilon=0.05):
+    dataset = val_loader.dataset
     target_model = resnet18_classifier(device, dataset.ds_name, path=model_paths[dataset.ds_name])
 
     e_list = []
     u_list = []
     nat_as = []  # Will store anomaly scores for clean images.
-    nat_accuracy = 0
+    adv_as = []  # Will store anomaly scores for adversarial images.
 
     i = 0
-    for images, labels in test_loader:
-        # For classification, move inputs to GPU.
-        y = target_model(norm(images.to(device))).detach().cpu()
-        nat_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
+    for images, labels in val_loader:
+        images = norm(images.to(device))
+        labels = labels.to(device)
 
         if isinstance(detector, UninformedStudents):
-            regression_error, predictive_uncertainty = detector.forward(norm(images.to(device)), labels)
-            # Append the values to the anomaly score list
-            e_list.append(regression_error)
-            u_list.append(predictive_uncertainty)
+            re, pu = detector.forward(images, labels)
+            e_list.append(re)
+            u_list.append(pu)
         else:
-            anomaly_score = detector.forward(norm(images.to(device)))
+            anomaly_score = detector.forward(images)
             nat_as.append(anomaly_score.item())
 
         i += 1
@@ -107,46 +106,25 @@ def test(detector, test_loader, device, norm, n_samples=100, epsilon=0.05):
         detector.v_mean = torch.tensor(u_list).mean().item()
         detector.v_std = torch.tensor(u_list).std().item()
 
-        # Normalize e_list and u_list
-        e_list = [(e - detector.e_mean) / detector.e_std for e in e_list]
-        u_list = [(u - detector.v_mean) / detector.v_std for u in u_list]
-
-        # Compute the anomaly score list
-        nat_as = [e + u for e, u in zip(e_list, u_list)]
+        # Normalize e_list and u_list and calculate the anomaly score
+        nat_as = [(e - detector.e_mean) / detector.e_std + (u - detector.v_mean) / 
+                  detector.v_std for e, u in zip(e_list, u_list)]
         
     nat_as = np.array(nat_as)
 
     # Calculate the top 1% quantile 
     threshold = torch.quantile(torch.tensor(nat_as), 0.90).item()
 
-    # Initialize lists to store the anomaly scores for adversarial images.
-    adv_as = []
-    adv_accuracy = 0
-
-    # Initialize the attacker
+    # Initialize the attacker on untargeted mode
     fgsm = FGSM(model=target_model, norm=norm, epsilon=epsilon, targeted=-1)
 
     i = 0
-    for images, labels in test_loader:
-        # if incorrect prediction, skip the sample
-        if (target_model(norm(images.to(device))).argmax(1) != labels.to(device)).sum().item() > 0:
-            continue
-
-        # Choose target labels depending on the attack type.
+    for images, labels in val_loader:
         adv_images = fgsm.attack(images.to(device), labels)
 
-        # Compute classification accuracy on adversarial images (using the classifier on GPU).
-        y = target_model(norm(adv_images).to(device)).detach().cpu()
-
-        if (y.argmax(1) != labels).sum().item() < len(labels):
-            continue
-                
-        # Calculate the accuracy on adversarial images.
-        adv_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
-
         if isinstance(detector, UninformedStudents):
-            regression_error, predictive_uncertainty = detector.forward(norm(adv_images).to(device), y.argmax(1))
-            anomaly_score = (regression_error - detector.e_mean) / detector.e_std + (predictive_uncertainty - detector.v_mean) / detector.v_std
+            re, pu = detector.forward(norm(adv_images).to(device)) # For conditional models I should pass the target model prediction
+            anomaly_score = (re - detector.e_mean) / detector.e_std + (pu - detector.v_mean) / detector.v_std
             adv_as.append(anomaly_score)
         else:
             anomaly_score = detector.forward(norm(adv_images).to(device))
@@ -158,19 +136,9 @@ def test(detector, test_loader, device, norm, n_samples=100, epsilon=0.05):
 
     adv_as = np.array(adv_as)
     detected = np.sum(adv_as > threshold)
-
-    # -------------------------------s
-    # 4. Save and display results.
-    # -------------------------------
-    results = {
-        "threshold": threshold,
-        "natural_accuracy": nat_accuracy,
-        "adversarial_accuracy": adv_accuracy,
-        "adversarial_detection_accuracy": (detected / len(adv_as) * 100) if len(adv_as) > 0 else 0,
-        "pAUC": partial_auc(nat_as.tolist(), adv_as.tolist())
-    }
     
-    return results
+    return {"det_acc": (detected / len(adv_as) * 100) if len(adv_as) > 0 else 0,
+        "pAUC": partial_auc(nat_as.tolist(), adv_as.tolist())}
 
 def main(config):
     # Initialize the device
@@ -178,18 +146,19 @@ def main(config):
 
     # Initialize the Tensorboard writer
     writer = SummaryWriter()
-    writer.add_hparams(flatten_dict(config), {}, run_name='')
+    #writer.add_hparams(flatten_dict(config), {}, run_name='')
+    writer.add_text("Hyperparameters", json.dumps(config, indent=2))
 
     # Get the dataset and create data loaders
     dataset = get_dataset(config['dataset'])
-    train_loader, test_loader = dataset.make_loaders(batch_size=config['train']['batch_size'], workers=4, only_train=True)
-    test_loader.dataset.ds_name = config['dataset']
+    train_loader, val_loader = dataset.make_loaders(batch_size=config['train']['batch_size'], workers=4, only_train=True)
+    val_loader.dataset.ds_name = config['dataset']
 
     # Then call the function to initialize the detector
     detector = initialize_detector(config, dataset, device)
 
     # Train the detector
-    train(config, device, dataset.normalize, writer, train_loader, detector, test_loader)
+    train(config, device, dataset.normalize, writer, train_loader, detector, val_loader)
 
 
 if __name__ == "__main__":

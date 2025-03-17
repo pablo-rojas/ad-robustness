@@ -27,13 +27,11 @@ class BaseDataset(Dataset):
     def make_loaders(self, workers=4, batch_size=100, only_train=False, 
                      only_test=False, seed=42):
         # Create deterministic but shuffled indices
-        train_indices = list(range(len(self.train_data)))
         val_indices = list(range(len(self.val_data))) if hasattr(self, 'val_data') else []
         test_indices = list(range(len(self.test_data)))
         
         # Shuffle with fixed seed
         random.seed(seed)
-        random.shuffle(train_indices)
         random.shuffle(val_indices) if val_indices else None
         random.shuffle(test_indices)
         generator = torch.Generator().manual_seed(seed)
@@ -41,9 +39,9 @@ class BaseDataset(Dataset):
         # Create the data loaders
         train_loader = DataLoader(
             self.train_data, batch_size=batch_size, 
-            sampler=FixedOrderSampler(train_indices),
+            shuffle=True,  # dynamic shuffling for training
             num_workers=workers, pin_memory=True,
-            worker_init_fn=seed_worker, generator=generator
+            worker_init_fn=seed_worker  # still using worker seeding if needed
         )
         
         val_loader = None
@@ -70,8 +68,6 @@ class MNISTDataset(BaseDataset):
     def __init__(self, data_path='./data/mnist', seed=42, normalize_images=False):
         # Set dataset name and normalization parameters
         self.ds_name = 'mnist'
-        # self.mean = torch.tensor([0.5, 0.5, 0.5])
-        # self.std = torch.tensor([0.5, 0.5, 0.5])
         self.mean = torch.tensor([0.5])
         self.std = torch.tensor([0.5])
         self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
