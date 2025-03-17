@@ -176,7 +176,7 @@ def get_target(labels):
         a = random.randint(0, 9)
     return torch.tensor([a])
 
-def singe_discriminator_statistic(discriminator_output, target_label):
+def sd_statistic(discriminator_output, target_label):
     """
     Converts the output of the discriminator into a single statistic, as described in the paper.
     On top of that, for simplicity of comparisson, I changed the sign of the output to be positive, 

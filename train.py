@@ -13,7 +13,6 @@ from src.misc_utils import *
 from ACGAN.attacks.FGSM import FGSM
 
 
-
 def train(config, device, norm, writer, train_loader, detector, test_loader=None):
     
     # Parameters from JSON
@@ -21,17 +20,18 @@ def train(config, device, norm, writer, train_loader, detector, test_loader=None
     steps = config['train']['steps']
     val_interval = config['train']['test_interval'] if config['train']['test_interval'] != 0 else None
 
+    # Initialize variables
     i = 0
     epoch = 1
     best_pAUC = 0
+
     # Train the model for the specified number of epochs
     start_time = time.time()
-    i = 0
     while i < steps:
         epoch_start = time.time()
-        for batch_idx, (images, labels) in enumerate(train_loader):
+        for _, (images, labels) in enumerate(train_loader):
             images = norm(images).to(device)
-            loss = detector.train_step(images)
+            loss = detector.train_step(images, labels)
             writer.add_scalar('Loss/train', loss.item(), i)
             i += 1
 
@@ -52,21 +52,25 @@ def train(config, device, norm, writer, train_loader, detector, test_loader=None
         elapsed_time = time.time() - start_time
         steps_left = steps - i
         estimated_time_left = (steps_left * elapsed_time) / i if i > 0 else 0
-        
-        print(f"Progress: {i}/{steps} steps ({(i/steps)*100:.1f}%)")
-        if test_loader is None:
-            print(f"Epoch {epoch} time: {epoch_time:.1f}s, Est. time left: {estimated_time_left/60:.1f}min")
-        else:
             
-            results = test(detector, test_loader, device, norm, n_samples=config['train']['test_samples'])
-            if results['pAUC'] > best_pAUC:
-                best_pAUC = results['pAUC']
-                detector.save(save_path+'_best')
-                print("Model saved at", save_path+'_best')
+        results = test(detector, test_loader, device, norm, n_samples=config['train']['test_samples'])
+        detector.save(save_path+'_last')
 
-            writer.add_scalar('Metrics/pAUC', results['pAUC'], i)
-            print(f"Epoch: {epoch}, pAUC: {results['pAUC']}, time: {epoch_time:.1f}s, Est. time left: {estimated_time_left/60:.1f}min")
-            epoch += 1
+        # Save the model if the pAUC is better than the previous best
+        if results['pAUC'] > best_pAUC:
+            best_pAUC = results['pAUC']
+            detector.save(save_path+'_best')
+        
+        # End training if the pAUC is 0.2 (max) or 0.1 worse than the best pAUC
+        if best_pAUC >= 0.2 or results['pAUC'] < best_pAUC - 0.02:
+            print("Early stopping")
+            break
+        
+
+        writer.add_scalar('Metrics/pAUC', results['pAUC'], i)
+        print(f"Progress: {i}/{steps} steps ({(i/steps)*100:.1f}%)")
+        print(f"Epoch: {epoch}, pAUC: {results['pAUC']}, time: {epoch_time:.1f}s, Est. time left: {estimated_time_left/60:.1f}min")
+        epoch += 1
 
 def test(detector, test_loader, device, norm, n_samples=100, epsilon=0.05):
     dataset = test_loader.dataset
@@ -122,7 +126,7 @@ def test(detector, test_loader, device, norm, n_samples=100, epsilon=0.05):
     # Initialize the attacker
     fgsm = FGSM(model=target_model, norm=norm, epsilon=epsilon, targeted=-1)
 
-    processed = 0
+    i = 0
     for images, labels in test_loader:
         # if incorrect prediction, skip the sample
         if (target_model(norm(images.to(device))).argmax(1) != labels.to(device)).sum().item() > 0:
@@ -148,16 +152,12 @@ def test(detector, test_loader, device, norm, n_samples=100, epsilon=0.05):
             anomaly_score = detector.forward(norm(adv_images).to(device))
             adv_as.append(anomaly_score.cpu().item())
 
-        processed += 1
-        if processed >= n_samples:
+        i += 1
+        if i >= n_samples:
             break
 
     adv_as = np.array(adv_as)
     detected = np.sum(adv_as > threshold)
-    acc = (detected / len(adv_as) * 100) if len(adv_as) > 0 else 0
-
-    # Compute partial AUC (pAUC) using the provided utility.
-    pAUC = partial_auc(nat_as.tolist(), adv_as.tolist())
 
     # -------------------------------s
     # 4. Save and display results.
@@ -166,22 +166,13 @@ def test(detector, test_loader, device, norm, n_samples=100, epsilon=0.05):
         "threshold": threshold,
         "natural_accuracy": nat_accuracy,
         "adversarial_accuracy": adv_accuracy,
-        "adversarial_detection_accuracy": acc,
-        "pAUC": pAUC
+        "adversarial_detection_accuracy": (detected / len(adv_as) * 100) if len(adv_as) > 0 else 0,
+        "pAUC": partial_auc(nat_as.tolist(), adv_as.tolist())
     }
     
     return results
 
-def main(args):
-
-    # Load configuration from JSON
-    config = load_config(args.config)
-
-    # Parameters from JSON
-    dataset_name = config['dataset']
-    save_path = config['model_path']
-    batch_size = config['train']['batch_size']
-
+def main(config):
     # Initialize the device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -190,26 +181,21 @@ def main(args):
     writer.add_hparams(flatten_dict(config), {}, run_name='')
 
     # Get the dataset and create data loaders
-    dataset = get_dataset(dataset_name)
-    train_loader, test_loader = dataset.make_loaders(batch_size=batch_size, workers=4, only_train=True)
-    test_loader.dataset.ds_name = dataset_name
+    dataset = get_dataset(config['dataset'])
+    train_loader, test_loader = dataset.make_loaders(batch_size=config['train']['batch_size'], workers=4, only_train=True)
+    test_loader.dataset.ds_name = config['dataset']
 
     # Then call the function to initialize the detector
     detector = initialize_detector(config, dataset, device)
 
+    # Train the detector
     train(config, device, dataset.normalize, writer, train_loader, detector, test_loader)
-    detector.save(save_path)
-    print("Model saved at", save_path)
 
-    #detector.load(save_path)
-
-    results = test(detector, dataset, test_loader, device, 1000)
-
-    print(results)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate the detector model.")
     parser.add_argument('--config', type=str, default='cfg/cifar_train_us.json', help='Path to the configuration file.')
     args = parser.parse_args()
+    config = load_config(args.config)
 
-    main(args)
+    main(config)

@@ -29,3 +29,14 @@ def setup_attack_kwargs(config):
             'custom_loss': None
         }
     return attack_kwargs
+
+def get_targeted(attack_config):
+    if attack_config["targeted"] in [True, 1]:
+        targeted = True
+        str_targeted = "T"
+    elif attack_config["targeted"] in [False, -1]:
+        targeted = True
+        str_targeted = "U"
+    else:
+        raise ValueError("Invalid targeted value: " + str(attack_config["targeted"]))
+    return targeted,str_targeted

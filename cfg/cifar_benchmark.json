@@ -15,6 +15,12 @@
                 "targeted": 1
             },
             {
+                "type": "fgsm",
+                "epsilon": 0.05,
+                "constraint": "inf",
+                "targeted": -1
+            },
+            {
                 "type": "pgd",
                 "epsilon": 0.1,
                 "constraint": "inf",

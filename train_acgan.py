@@ -8,7 +8,7 @@ from tqdm import tqdm
 from torch import nn
 import numpy as np
 from ACGAN.attacks.FGSM import FGSM
-from src.eval_utils import partial_auc, get_target, singe_discriminator_statistic
+from src.eval_utils import partial_auc, get_target, sd_statistic
 
 # Import your dataset class from your own code
 from src.dataset_utils import get_dataset
@@ -87,10 +87,10 @@ def test(gan, test_loader, device, n_samples=400, epsilon=0.05, targeted=1):
         adv_accuracy += (y_adv.argmax(1) == labels).sum().item()/n_samples
 
         # Calculate AS
-        anomaly_score = singe_discriminator_statistic(gan.discriminator(images.to(device)), labels)
+        anomaly_score = sd_statistic(gan.discriminator(images.to(device)), labels)
         nat_as = np.append(nat_as, anomaly_score.item())
 
-        anomaly_score_adv = singe_discriminator_statistic(gan.discriminator(adv_images.to(device)), y_adv.argmax(1))
+        anomaly_score_adv = sd_statistic(gan.discriminator(adv_images.to(device)), y_adv.argmax(1))
         adv_as = np.append(adv_as, anomaly_score_adv.item())
 
         

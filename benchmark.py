@@ -2,16 +2,15 @@
 import os
 import torch
 import argparse
-
 import numpy as np
 from tqdm import tqdm
 
 # Import dataset and evaluation utilities.
 from src.dataset_utils import get_dataset
-from src.detector import UninformedStudents, ClassConditionalUninformedStudents
+from src.detector import UninformedStudents
 from src.model_utils import resnet18_classifier
 from src.eval_utils import *
-from src.misc_utils import load_config, setup_attack_kwargs
+from src.misc_utils import load_config, setup_attack_kwargs, get_targeted
 
 # Import ACGAN modules.
 from ACGAN.GAN.acgan_1 import ACGAN
@@ -21,7 +20,6 @@ from ACGAN.attacks.FGSM import FGSM
 
 # Import PGD attacker.
 from robustness import attacker
-
 
 
 def main(config):
@@ -40,6 +38,7 @@ def main(config):
     # Load the dataset and create a per-sample loader.
     dataset = get_dataset(config['dataset'])
     test_loader = dataset.make_loaders(workers=0, batch_size=1, only_test=True)
+    norm = dataset.normalize
 
     # Load the pretrained ResNet18 classifier.
     target_model = resnet18_classifier(device, config['dataset'], config['target_model_path'])
@@ -82,28 +81,33 @@ def main(config):
     nat_accuracy = 0
 
     print("Starting evaluation on natural (clean) images ...")
-    processed = 0
+
+    i = 0
+    pbar = tqdm(total=n_samples, desc="Evalutaing on Natural Images")
     for images, labels in test_loader:
-        y = target_model(dataset.normalize(images.to(device))).detach().cpu()
+        y = target_model(norm(images.to(device))).detach().cpu()
+
         # if incorrect prediction, skip the sample
         if ensure_succesful_attack and (y.argmax(1) != labels).sum().item() > 0:
                 continue
-        # For classification, move inputs to GPU.
+        
+        # Calculate the accuracy on natural images.
         nat_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
 
         # Calculate AS for ACGAN
-        as_ACGAN = singe_discriminator_statistic(gan.discriminator(images.to(device)), labels)
+        as_ACGAN = sd_statistic(gan.discriminator(images.to(device)), labels)
         nat_as_ACGAN.append(as_ACGAN.item())
 
-        # Calculate AS for Uninformed Students
-        regression_error, predictive_uncertainty = detector.forward(dataset.normalize(images.to(device)), labels)
-        as_UninformedStudents = (regression_error - detector.e_mean) / detector.e_std + (predictive_uncertainty - detector.v_mean) / detector.v_std
+        # Calculate AS from Regression Error (ru) and Predictive Uncertanty (pu) for Uninformed Students
+        re, pu = detector.forward(norm(images.to(device)), labels)
+        as_UninformedStudents = (re - detector.e_mean) / detector.e_std + (pu - detector.v_mean) / detector.v_std
         nat_as_UninformedStudents.append(as_UninformedStudents)
 
-        save_image(config['test']['save'], results_dir + "/img/"+str(processed) + "_nat.png", dataset.normalize(images)[0].detach().cpu(), dataset)
+        save_image(config['test']['save'], results_dir + "/img/"+str(i) + "_nat.png", norm(images)[0].detach().cpu(), dataset)
 
-        processed += 1
-        if processed >= n_samples:
+        pbar.update(1)
+        i += 1
+        if i >= n_samples:
             break
 
     nat_as_ACGAN = np.array(nat_as_ACGAN)
@@ -126,13 +130,7 @@ def main(config):
         adv_accuracy = 0
 
         # See if attack is targeted
-        if attack_config["targeted"] in [True, 1]:
-            targeted = True
-            str_targeted = "T"
-            
-        elif attack_config["targeted"] in [False, -1]:
-            targeted = True
-            str_targeted = "U"
+        targeted, str_targeted = get_targeted(attack_config)
 
         # Create individual directories for each attack configuration.
         results_dir_attack = results_dir + "/" + attack_config['type'] + "_" + str_targeted + "_" + attack_config['constraint'] + "_" + str(attack_config['epsilon']) 
@@ -146,19 +144,19 @@ def main(config):
              attack_kwargs = setup_attack_kwargs(attack_config)    
 
         elif (attack_config['type'] == 'cw'):
-            cw = CW(model=target_model, norm=dataset.normalize, kappa=attack_config['kappa'], steps=attack_config['iterations'], lr=attack_config['step_size'], targeted=attack_config['targeted'])
+            cw = CW(model=target_model, norm=norm, kappa=attack_config['kappa'], steps=attack_config['iterations'], lr=attack_config['step_size'], targeted=attack_config['targeted'])
 
         elif (attack_config['type'] == 'fgsm'):
-            fgsm = FGSM(model=target_model, norm=dataset.normalize, epsilon=attack_config['epsilon'], targeted=attack_config['targeted'])
+            fgsm = FGSM(model=target_model, norm=norm, epsilon=attack_config['epsilon'], targeted=attack_config['targeted'])
 
         l2_dist = []
         linf_dist = []
-        processed = 0
+        i = 0
         pbar = tqdm(total=n_samples, desc="Adversarial Evaluation with " + attack_config['type'] + "_" + attack_config['constraint'] + "_" + str(attack_config['epsilon']))
         for images, labels in test_loader:
             
             # if incorrect prediction, skip the sample
-            if ensure_succesful_attack and (target_model(dataset.normalize(images.to(device))).argmax(1) != labels.to(device)).sum().item() > 0:
+            if ensure_succesful_attack and (target_model(norm(images.to(device))).argmax(1) != labels.to(device)).sum().item() > 0:
                 continue
 
             # Choose target labels depending on the attack type.
@@ -177,7 +175,7 @@ def main(config):
                 raise ValueError("Invalid attack type: " + attack_config['type'])
 
             # Compute classification accuracy on adversarial images (using the classifier on GPU).
-            y = target_model(dataset.normalize(adv_images).to(device)).detach().cpu()
+            y = target_model(norm(adv_images).to(device)).detach().cpu()
 
             if ensure_succesful_attack and (y.argmax(1) != labels).sum().item() < len(labels):
                 continue
@@ -190,20 +188,19 @@ def main(config):
             linf_dist.append(torch.norm(adv_images - images.to(device), p=float('inf')).item())
 
             # Calculate AS for ACGAN
-            as_ACGAN = singe_discriminator_statistic(gan.discriminator(adv_images), y.argmax(1))
+            as_ACGAN = sd_statistic(gan.discriminator(adv_images), y.argmax(1))
             adv_as_ACGAN.append(as_ACGAN.item())
 
             # Calculate AS for Uninformed Students
-            regression_error, predictive_uncertainty = detector.forward(dataset.normalize(adv_images).to(device), y.argmax(1))
-            as_UninformedStudents = (regression_error - detector.e_mean) / detector.e_std + (predictive_uncertainty - detector.v_mean) / detector.v_std
+            re, pu = detector.forward(norm(adv_images).to(device), y.argmax(1))
+            as_UninformedStudents = (re - detector.e_mean) / detector.e_std + (pu - detector.v_mean) / detector.v_std
             adv_as_UninformedStudents.append(as_UninformedStudents)
 
-            save_image(config['test']['save'], results_dir_attack + "/img/"+str(processed) + "_adv.png", dataset.normalize(adv_images)[0].detach().cpu(), dataset)
+            save_image(config['test']['save'], results_dir_attack + "/img/"+str(i) + "_adv.png", norm(adv_images)[0].detach().cpu(), dataset)
 
-            processed += 1
-            pbar.update(1)  # Manually update the progress bar for processed samples
-
-            if processed >= n_samples:
+            pbar.update(1)
+            i += 1
+            if i >= n_samples:
                 break
 
         # Convert lists to numpy arrays for easier processing.
@@ -255,12 +252,10 @@ def main(config):
         }
         save_results(results_dir_attack + '/uninformed_students', results_UninformedStudents, range=(-3, 17))
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Test ACGAN with PGD adversarial attack and compute anomaly score metrics"
-    )
-    parser.add_argument('--config', type=str, default='cfg/mnist_benchmark.json',
-                        help='Path to the configuration file.')
+    parser = argparse.ArgumentParser(description="Test ACGAN with PGD adversarial attack and compute anomaly score metrics")
+    parser.add_argument('--config', type=str, default='cfg/mnist_benchmark.json', help='Path to the configuration file.')
     args = parser.parse_args()
     config = load_config(args.config)
 
