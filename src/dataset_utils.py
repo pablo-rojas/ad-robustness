@@ -58,7 +58,7 @@ class BaseDataset(Dataset):
         test_loader = DataLoader(
             self.test_data, batch_size=1, 
             sampler=FixedOrderSampler(test_indices),
-            num_workers=workers, pin_memory=True,
+            num_workers=workers, pin_memory=False,
             worker_init_fn=seed_worker, generator=generator
         )
 

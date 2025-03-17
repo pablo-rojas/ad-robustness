@@ -24,19 +24,11 @@ from robustness import attacker
 
 
 
-def main(args):
-    config = load_config(args.config)
-    dataset_name = config['dataset']
-    experiment_name = config['experiment_name']
-
+def main(config):
     # Directories for models and results.
-    results_dir = os.path.join("results", experiment_name)
-    us_path = config['uninformed_students_path']
-    acgan_path = config['acgan_path']
-    patch_size = config['patch_size']
+    results_dir = os.path.join("results", config['experiment_name'])
     n_samples = config['test']['samples']
     ensure_succesful_attack = config['test']['ensure_succesful_attack']
-    save = config['test']['save']
 
     # Create directories if they do not exist
     os.makedirs(results_dir, exist_ok=True)
@@ -46,22 +38,22 @@ def main(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load the dataset and create a per-sample loader.
-    dataset = get_dataset(dataset_name)
-    test_loader = dataset.make_loaders(workers=4, batch_size=1, only_test=True)
+    dataset = get_dataset(config['dataset'])
+    test_loader = dataset.make_loaders(workers=0, batch_size=1, only_test=True)
 
     # Load the pretrained ResNet18 classifier.
-    target_model = resnet18_classifier(device, dataset_name, config['target_model_path'])
+    target_model = resnet18_classifier(device, config['dataset'], config['target_model_path'])
 
     # Initialize Uninformed Students
-    detector = UninformedStudents(config['num_students'], dataset, patch_size=patch_size, device=device)
-    #detector = ClassConditionalUninformedStudents(config['num_students'], dataset, patch_size=patch_size, device=device)
-    detector.load(us_path)
+    detector = UninformedStudents(config['num_students'], dataset, patch_size=config['patch_size'], device=device)
+    #detector = ClassConditionalUninformedStudents(config['num_students'], dataset, patch_size=config['patch_size'], device=device)
+    detector.load(config['uninformed_students_path'])
 
     im_channel = 3  # resnet18 expects 3-channel images
     in_dim = 500
     class_dim = 10
 
-    if (dataset_name == 'mnist'):
+    if (config['dataset'] == 'mnist'):
         im_channel = 1
         gan = ACGAN(
             in_dim=50,
@@ -75,7 +67,7 @@ def main(args):
     else:
         gan = ACGAN_Res(in_dim=in_dim, class_dim=class_dim, CNN=target_model)
 
-    gan.load_model(acgan_path)
+    gan.load_model(config['acgan_path'])
     gan.generator.eval()
     gan.discriminator.eval()
 
@@ -85,8 +77,6 @@ def main(args):
     # -------------------------------
     # 1. Natural (clean) evaluation loop.
     # -------------------------------
-    e_list = []
-    u_list = []
     nat_as_ACGAN = []  # Will store anomaly scores for clean images.
     nat_as_UninformedStudents = []  # Will store anomaly scores for clean images.
     nat_accuracy = 0
@@ -110,7 +100,7 @@ def main(args):
         as_UninformedStudents = (regression_error - detector.e_mean) / detector.e_std + (predictive_uncertainty - detector.v_mean) / detector.v_std
         nat_as_UninformedStudents.append(as_UninformedStudents)
 
-        save_image(save, results_dir + "/img/"+str(processed) + "_nat.png", dataset.normalize(images)[0].detach().cpu(), dataset)
+        save_image(config['test']['save'], results_dir + "/img/"+str(processed) + "_nat.png", dataset.normalize(images)[0].detach().cpu(), dataset)
 
         processed += 1
         if processed >= n_samples:
@@ -135,8 +125,17 @@ def main(args):
         adv_as_UninformedStudents = []
         adv_accuracy = 0
 
+        # See if attack is targeted
+        if attack_config["targeted"] in [True, 1]:
+            targeted = True
+            str_targeted = "T"
+            
+        elif attack_config["targeted"] in [False, -1]:
+            targeted = True
+            str_targeted = "U"
+
         # Create individual directories for each attack configuration.
-        results_dir_attack = results_dir + "/" + attack_config['type'] + "_" + attack_config['constraint'] + "_" + str(attack_config['epsilon'])
+        results_dir_attack = results_dir + "/" + attack_config['type'] + "_" + str_targeted + "_" + attack_config['constraint'] + "_" + str(attack_config['epsilon']) 
         os.makedirs(results_dir_attack, exist_ok=True)
         os.makedirs(results_dir_attack + "/acgan", exist_ok=True)
         os.makedirs(results_dir_attack + "/uninformed_students", exist_ok=True)
@@ -152,21 +151,18 @@ def main(args):
         elif (attack_config['type'] == 'fgsm'):
             fgsm = FGSM(model=target_model, norm=dataset.normalize, epsilon=attack_config['epsilon'], targeted=attack_config['targeted'])
 
+        l2_dist = []
+        linf_dist = []
         processed = 0
         pbar = tqdm(total=n_samples, desc="Adversarial Evaluation with " + attack_config['type'] + "_" + attack_config['constraint'] + "_" + str(attack_config['epsilon']))
         for images, labels in test_loader:
             
-            temp = target_model(dataset.normalize(images.to(device))).argmax(1)
             # if incorrect prediction, skip the sample
             if ensure_succesful_attack and (target_model(dataset.normalize(images.to(device))).argmax(1) != labels.to(device)).sum().item() > 0:
                 continue
 
             # Choose target labels depending on the attack type.
-            if attack_config["targeted"] in [True, 1]:
-                target_labels = get_target(labels)
-                
-            elif attack_config["targeted"] in [False, -1]:
-                target_labels = labels
+            target_labels = get_target(labels) if targeted else labels
 
             if (attack_config['type'] == 'pgd'):
                 adv_images = pgd_attacker(images.to(device), target_labels.to(device), attack_config["targeted"], **attack_kwargs)
@@ -183,12 +179,15 @@ def main(args):
             # Compute classification accuracy on adversarial images (using the classifier on GPU).
             y = target_model(dataset.normalize(adv_images).to(device)).detach().cpu()
 
-            temp = y.argmax(1)
             if ensure_succesful_attack and (y.argmax(1) != labels).sum().item() < len(labels):
                 continue
                     
             # Calculate the accuracy on adversarial images.
             adv_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
+
+            # Calculate L2 and Linf distances between the clean and adversarial images.
+            l2_dist.append(torch.norm(adv_images - images.to(device), p=2).item())
+            linf_dist.append(torch.norm(adv_images - images.to(device), p=float('inf')).item())
 
             # Calculate AS for ACGAN
             as_ACGAN = singe_discriminator_statistic(gan.discriminator(adv_images), y.argmax(1))
@@ -199,7 +198,7 @@ def main(args):
             as_UninformedStudents = (regression_error - detector.e_mean) / detector.e_std + (predictive_uncertainty - detector.v_mean) / detector.v_std
             adv_as_UninformedStudents.append(as_UninformedStudents)
 
-            save_image(save, results_dir_attack + "/img/"+str(processed) + "_adv.png", dataset.normalize(adv_images)[0].detach().cpu(), dataset)
+            save_image(config['test']['save'], results_dir_attack + "/img/"+str(processed) + "_adv.png", dataset.normalize(adv_images)[0].detach().cpu(), dataset)
 
             processed += 1
             pbar.update(1)  # Manually update the progress bar for processed samples
@@ -210,6 +209,8 @@ def main(args):
         # Convert lists to numpy arrays for easier processing.
         adv_as_ACGAN = np.array(adv_as_ACGAN)
         adv_as_UninformedStudents = np.array(adv_as_UninformedStudents)
+        l2_dist = np.array(l2_dist)
+        linf_dist = np.array(linf_dist)
 
         # -------------------------------
         # 3. Compute detection metrics.
@@ -235,7 +236,9 @@ def main(args):
             "natural_accuracy": nat_accuracy,
             "adversarial_accuracy": adv_accuracy,
             "adversarial_detection_accuracy": acc_ACGAN,
-            "pAUC": pAUC_ACGAN
+            "pAUC": pAUC_ACGAN,
+            "l2_dist": l2_dist,
+            "linf_dist": linf_dist
         }
         save_results(results_dir_attack + '/acgan', results_ACGAN, range=(0, 101))
         
@@ -246,7 +249,9 @@ def main(args):
             "natural_accuracy": nat_accuracy,
             "adversarial_accuracy": adv_accuracy,
             "adversarial_detection_accuracy": acc_UninformedStudents,
-            "pAUC": pAUC_UninformedStudents
+            "pAUC": pAUC_UninformedStudents,
+            "l2_dist": l2_dist,
+            "linf_dist": linf_dist
         }
         save_results(results_dir_attack + '/uninformed_students', results_UninformedStudents, range=(-3, 17))
 
@@ -257,5 +262,6 @@ if __name__ == "__main__":
     parser.add_argument('--config', type=str, default='cfg/mnist_benchmark.json',
                         help='Path to the configuration file.')
     args = parser.parse_args()
+    config = load_config(args.config)
 
-    main(args)
+    main(config)

@@ -1,13 +1,13 @@
 {
     "experiment_name": "train_us_cifar",
     "method": "UninformedStudents",
-    "model_path": "models/cifar_us2",
+    "model_path": "models/cifar_us_fast",
     "dataset": "cifar",
     "patch_size": 7,
     "num_students": 10,
     "train": {
         "steps": 500000,
-        "batch_size": 16,
+        "batch_size": 32,
         "learning_rate": 0.0001,
         "test_interval": 0,
         "test_samples": 500
