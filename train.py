@@ -43,6 +43,7 @@ def train(config, device, norm, writer, train_loader, detector, val_loader=None)
 
                 if results['pAUC'] > best_pAUC:
                     best_pAUC = results['pAUC']
+                    best_epoch = epoch
                     detector.save(save_path+'_best')
                     print("Model saved at", save_path+'_best')
             
@@ -61,11 +62,12 @@ def train(config, device, norm, writer, train_loader, detector, val_loader=None)
         # Save the model if the pAUC is better than the previous best
         if results['pAUC'] > best_pAUC:
             best_pAUC = results['pAUC']
+            best_epoch = epoch
             detector.save(save_path+'_best')
         
-        # End training if the pAUC is more than 0.02 wors than the best pAUC, or it has not improved in the last 5 epochs
+        # End training if the pAUC is more than 0.02 worse than the best pAUC, or it has not improved in the last 5 epochs
         if (results['pAUC'] < best_pAUC - 0.02) or (epoch - best_epoch > 5):
-            print("Early stopping")
+            print("Early stopping, best pAUC:", best_pAUC, "at epoch", best_epoch)
             break
 
         writer.add_scalar('Metrics/pAUC', results['pAUC'], i)
@@ -145,20 +147,31 @@ def main(config):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Initialize the Tensorboard writer
-    writer = SummaryWriter()
-    #writer.add_hparams(flatten_dict(config), {}, run_name='')
-    writer.add_text("Hyperparameters", json.dumps(config, indent=2))
+    writer = UnifiedSummaryWriter()
+    #writer.add_hparams(flatten_dict(config), {})
+    #writer.add_text("Hyperparameters", json.dumps(config, indent=2))
 
     # Get the dataset and create data loaders
     dataset = get_dataset(config['dataset'])
-    train_loader, val_loader = dataset.make_loaders(batch_size=config['train']['batch_size'], workers=4, only_train=True)
+    train_loader, val_loader, test_loader = dataset.make_loaders(batch_size=config['train']['batch_size'], workers=4)
     val_loader.dataset.ds_name = config['dataset']
+    test_loader.dataset.ds_name = config['dataset']
 
     # Then call the function to initialize the detector
     detector = initialize_detector(config, dataset, device)
 
     # Train the detector
     train(config, device, dataset.normalize, writer, train_loader, detector, val_loader)
+
+    # Evaluate the detector
+    results = val(detector, test_loader, device, dataset.normalize, n_samples=10000)
+
+    # Log the hparams again with the updated metrics
+    writer.add_hparams(flatten_dict(config), results)
+
+    writer.close()
+
+
 
 
 if __name__ == "__main__":

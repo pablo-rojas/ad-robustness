@@ -9,6 +9,10 @@
         "steps": 500000,
         "batch_size": 16,
         "learning_rate": 0.0001,
+        "weight_decay": 0.0001,
+        "beta1": 0.9,
+        "beta2": 0.999,
+        "epsilon": 1e-8,
         "test_interval": 0,
         "test_samples": 500
     }

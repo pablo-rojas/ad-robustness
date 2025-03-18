@@ -255,7 +255,7 @@ def main(config):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test ACGAN with PGD adversarial attack and compute anomaly score metrics")
-    parser.add_argument('--config', type=str, default='cfg/mnist_benchmark.json', help='Path to the configuration file.')
+    parser.add_argument('--config', type=str, default='cfg/cifar_benchmark.json', help='Path to the configuration file.')
     args = parser.parse_args()
     config = load_config(args.config)
 

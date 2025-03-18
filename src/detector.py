@@ -11,27 +11,39 @@ class UninformedStudents(nn.Module):
 
     Attributes:
         patch_size (int): The size of the patches.
+        dataset (str): The name of the dataset.
+        num_students (int): The number of student models.
         teacher (torch.nn.Module): The teacher model.
         students (list): The student models.
         criterion (torch.nn.Module): The loss criterion.
         optimizer (torch.optim.Optimizer): The optimizer.
+        device (torch.device): The device to run the models on.
     """
 
-    def __init__(self, num_students, dataset, patch_size=5, lr=0.0001, weight_decay=0, device='cpu'):
+    def __init__(self, config, device='cpu'):
+        """
+        Initializes the UninformedStudents model.
+
+        Args:
+            config (dict): Configuration dictionary.
+            device (torch.device, optional): The device to run the models on. Defaults to 'cpu'.
+        """
         super(UninformedStudents, self).__init__()
-        self.patch_size = patch_size
-        self.teacher, self.students = initialize_us_models(num_students, dataset, patch_size, device)
+        self.patch_size = config["patch_size"]
+        self.dataset = config["dataset"]
+        self.num_students = config["num_students"]
+        self.teacher, self.students = initialize_us_models(self.num_students, self.dataset, self.patch_size, device)
         self.criterion = nn.MSELoss()
         self.optimizer = torch.optim.Adam(
-            [param for student in self.students for param in student.parameters()], lr=lr, weight_decay=weight_decay
+            [param for student in self.students for param in student.parameters()], 
+            lr=config["train"]["learning_rate"], weight_decay=config["train"]["weight_decay"], 
+            betas=(config["train"]["beta1"], config["train"]["beta2"]), eps=config["train"]["eps"]
         )
         self.to(device)
-        print("Teacher: " + str(self.teacher))
-        print("Students: " + str(self.students))
     
     def save(self, path):
         """
-        Saves the teacher, and student models to the specified path.
+        Saves the teacher and student models to the specified path.
 
         Args:
             path (str): The directory where the models will be saved.
@@ -60,7 +72,7 @@ class UninformedStudents(nn.Module):
 
     def load(self, path):
         """
-        Loads the teacher, and student models from the specified path.
+        Loads the teacher and student models from the specified path.
 
         Args:
             path (str): The directory from where the models will be loaded.
@@ -90,47 +102,6 @@ class UninformedStudents(nn.Module):
         for student in self.students:
             student.to(device)
 
-    def train_patch(self, patches, label=None):
-        """
-        Trains the student models on a batch of patches.
-
-        Args:
-            patches (torch.Tensor): The input patches.
-            label (torch.Tensor, optional): The class label. Defaults to None.
-
-        Returns:
-            torch.Tensor: The total loss.
-        """
-        # Forward pass of the teacher - compute once for all students
-        teacher_outputs = self.teacher(patches).detach().squeeze()
-        
-        # Preallocate tensor for student outputs.
-        # We assume each student's output (after squeeze) matches teacher_outputs shape.
-        num_students = len(self.students)
-        output_shape = teacher_outputs.shape  # e.g., (batch_size, features)
-        all_student_outputs = torch.empty((num_students,) + output_shape, 
-                                        device=patches.device, dtype=teacher_outputs.dtype)
-        
-        # Fill the preallocated tensor with each student's output
-        for i, student in enumerate(self.students):
-            # Compute output and squeeze to match teacher_outputs shape.
-            all_student_outputs[i] = student(patches).squeeze()
-
-        teacher_outputs_unsqueezed = teacher_outputs.unsqueeze(0).expand(num_students, *teacher_outputs.shape)
-
-
-        # Compute loss for all students at once.
-        # If self.criterion is nn.MSELoss with default "mean" reduction, this returns a scalar.
-        losses = self.criterion(all_student_outputs, teacher_outputs_unsqueezed)
-        total_loss = losses.sum()  # If losses is scalar, .sum() is a no-op; adjust if using "none" reduction.
-
-        # Backpropagation
-        self.optimizer.zero_grad()
-        total_loss.backward()
-        self.optimizer.step()
-
-        return total_loss
-
     def train_step(self, x, labels=None):
         """
         Performs a training step on a batch of anomaly-free images.
@@ -143,25 +114,20 @@ class UninformedStudents(nn.Module):
         Returns:
             torch.Tensor: The total loss.
         """
-
         teacher_outputs = self.teacher(x).detach()
 
         # Preallocate tensor for student outputs.
-        # We assume each student's output (after squeeze) matches teacher_outputs shape.
         num_students = len(self.students)
         output_shape = teacher_outputs.shape  # e.g., (batch_size, features)
         all_student_outputs = torch.empty((num_students,) + output_shape, 
                                         device=x.device, dtype=teacher_outputs.dtype)
         
-        
         # Fill the preallocated tensor with each student's output
         for i, student in enumerate(self.students):
-            # Compute output and squeeze to match teacher_outputs shape.
             all_student_outputs[i] = student(x).squeeze()
 
         teacher_outputs_unsqueezed = teacher_outputs.unsqueeze(0).expand(num_students, *teacher_outputs.shape)
 
-        #student_outputs = torch.stack([output.squeeze() for output in student_outputs])
         loss = self.criterion(all_student_outputs, teacher_outputs_unsqueezed)
         self.optimizer.zero_grad()
         loss.backward()
@@ -196,22 +162,16 @@ class UninformedStudents(nn.Module):
         Returns:
             torch.Tensor, torch.Tensor: The regression error and predictive uncertainty.
         """
-        
-        # Forward pass of the teacher model
         teacher_outputs = self.teacher(image).detach().squeeze()
         teacher_outputs_expanded = teacher_outputs.expand(len(self.students), *teacher_outputs.shape)
         
-        # Forward pass of each student model
         all_student_outputs = torch.stack([student(image).squeeze() for student in self.students])
         
-        # Calculate mean of student outputs across all students
         students_mean = all_student_outputs.mean(dim=0)
         
-        # Calculate regression error (squared difference between mean student output and teacher output)
         squared_diffs = (students_mean - teacher_outputs_expanded) ** 2
         regression_error = squared_diffs.mean()
         
-        # Calculate predictive uncertainty (variance across student models)
         predictive_uncertainty = all_student_outputs.var(dim=0).mean()
         
         return regression_error.item(), predictive_uncertainty.item()
@@ -510,12 +470,7 @@ def initialize_detector(config, dataset, device):
             device=device
         )
     elif method == 'UninformedStudents':
-        detector = UninformedStudents(
-            config['num_students'], 
-            dataset, 
-            patch_size=config['patch_size'], lr=config['train']['learning_rate'],
-            device=device
-        )
+        detector = UninformedStudents(config, device=device)
     else:
         raise ValueError(f"Unknown method: {method}")
     
