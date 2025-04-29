@@ -254,7 +254,7 @@ def sd_statistic(discriminator_output, target_label):
         torch.Tensor: The anomaly detection statistic
     """
     aux_prob, aux_out = discriminator_output
-    s_d = torch.log(aux_prob) + torch.log(aux_out[:, target_label])
+    s_d = torch.log(aux_prob) + torch.log(aux_out[0][target_label])
     if torch.isneginf(s_d).any():
         return torch.tensor(-100.0, device=s_d.device)
     return -s_d

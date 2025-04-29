@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.model_utils import extract_patches, initialize_us_models, resnet18_classifier
+from src.model_utils import initialize_us_models, resnet18_classifier, get_patch_descriptor
 
 class UninformedStudents(nn.Module):
     """
@@ -27,18 +27,34 @@ class UninformedStudents(nn.Module):
         Args:
             config (dict): Configuration dictionary.
             device (torch.device, optional): The device to run the models on. Defaults to 'cpu'.
+            norm (bool, optional): Whether to normalize the teacher outputs. Defaults to False.
         """
         super(UninformedStudents, self).__init__()
-        self.patch_size = config["patch_size"]
-        self.dataset = config["dataset"]
-        self.num_students = config["num_students"]
-        self.teacher, self.students = initialize_us_models(self.num_students, self.dataset, self.patch_size, device)
-        self.criterion = nn.MSELoss()
-        self.optimizer = torch.optim.Adam(
-            [param for student in self.students for param in student.parameters()], 
-            lr=config["train"]["learning_rate"], weight_decay=config["train"]["weight_decay"], 
-            betas=(config["train"]["beta1"], config["train"]["beta2"]), eps=config["train"]["eps"]
-        )
+        self.patch_size     = config["patch_size"]
+        self.dataset        = config["dataset"]
+        self.num_students   = config["num_students"]
+
+        # Initialize the teacher and student models.
+        # self.teacher = get_patch_descriptor(self.patch_size, dim=3)
+        # self.teacher.load_state_dict(torch.load('./models/p17descriptor.pth'))
+        self.teacher, self.students = initialize_us_models(
+            self.num_students, self.dataset, self.patch_size, device
+            )
+
+        # by default whitening is inactive: mean=0, std=1 (scalars)
+        self.register_buffer('teacher_mean', torch.tensor(0., device=device))
+        self.register_buffer('teacher_std',  torch.tensor(1., device=device))
+
+        if "train" in config:
+            self.optimizer = torch.optim.Adam(
+                [p for student in self.students for p in student.parameters()],
+                lr=config["train"]["learning_rate"],
+                weight_decay=config["train"]["weight_decay"],
+                betas=(config["train"]["beta1"], config["train"]["beta2"]),
+                eps=config["train"]["eps"]
+            )
+            self.phard = config["train"].get("phard", 0.0)
+        
         self.to(device)
     
     def save(self, path):
@@ -56,17 +72,13 @@ class UninformedStudents(nn.Module):
         
         # Save extra variables if they exist.
         extra_vars = {}
-        if hasattr(self, 'e_mean'):
-            extra_vars['e_mean'] = self.e_mean
-        if hasattr(self, 'e_std'):
-            extra_vars['e_std'] = self.e_std
-        if hasattr(self, 'v_mean'):
-            extra_vars['v_mean'] = self.v_mean
-        if hasattr(self, 'v_std'):
-            extra_vars['v_std'] = self.v_std
+        for name in ('e_mean','e_std','v_mean','v_std'):
+            if hasattr(self, name):
+                extra_vars[name] = getattr(self, name)
+        extra_vars['teacher_mean'] = self.teacher_mean.cpu()
+        extra_vars['teacher_std']  = self.teacher_std.cpu()
 
-        if extra_vars:
-            torch.save(extra_vars, os.path.join(path, 'extra_vars.pth'))
+        torch.save(extra_vars, os.path.join(path, 'extra_vars.pth'))
 
         print(f"Models saved to {path}")
 
@@ -82,13 +94,28 @@ class UninformedStudents(nn.Module):
             student.load_state_dict(torch.load(os.path.join(path, f'student_{idx}.pth')))
         
         # Load extra variables if the file exists.
-        extra_vars_path = os.path.join(path, 'extra_vars.pth')
-        if os.path.exists(extra_vars_path):
-            extra_vars = torch.load(extra_vars_path)
+        extra_path = os.path.join(path, 'extra_vars.pth')
+        if os.path.exists(extra_path):
+            extra_vars = torch.load(extra_path,
+                                    map_location=self.teacher_mean.device)
+            # restore teacher_mean & teacher_std via .data.copy_
+            if 'teacher_mean' in extra_vars:
+                self.teacher_mean.data.copy_(extra_vars['teacher_mean'])
+            if 'teacher_std' in extra_vars:
+                self.teacher_std.data.copy_(extra_vars['teacher_std'])
             for key, value in extra_vars.items():
                 setattr(self, key, value)
 
         print(f"Models loaded from {path}")
+
+    def save_pretrain(self, filename):
+        """
+        Saves the first student model as the pre-trained patch descriptor.
+        Args:
+            path (str): The directory where the model will be saved.
+        """
+        torch.save(self.students[0].state_dict(), filename)
+        print(f"Pre-trained model saved to {filename}")
 
     def to(self, device):
         """
@@ -109,26 +136,46 @@ class UninformedStudents(nn.Module):
 
         Args:
             x (torch.Tensor): The input images.
-            labels (torch.Tensor, optional): The class labels. Defaults to None.
+            labels (torch.Tensor, optional): The class labels, unused, for compatibility reasons. Defaults to None.
 
         Returns:
             torch.Tensor: The total loss.
         """
-        teacher_outputs = self.teacher(x).detach()
+        t = self.teacher(x).detach()
+
+        # Normalize the teacher outputs if needed
+        t_norm = (t - self.teacher_mean[None, ..., None, None]) \
+                 / self.teacher_std[ None, ..., None, None]
 
         # Preallocate tensor for student outputs.
-        num_students = len(self.students)
-        output_shape = teacher_outputs.shape  # e.g., (batch_size, features)
-        all_student_outputs = torch.empty((num_students,) + output_shape, 
-                                        device=x.device, dtype=teacher_outputs.dtype)
+        s = torch.empty((len(self.students),) + t.shape, 
+                                        device=x.device, dtype=t.dtype)
         
         # Fill the preallocated tensor with each student's output
         for i, student in enumerate(self.students):
-            all_student_outputs[i] = student(x).squeeze()
+            s[i] = student(x).squeeze()
 
-        teacher_outputs_unsqueezed = teacher_outputs.unsqueeze(0).expand(num_students, *teacher_outputs.shape)
+        t_exp = t_norm.unsqueeze(0).expand_as(s)
 
-        loss = self.criterion(all_student_outputs, teacher_outputs_unsqueezed)
+        if self.phard > 0:
+            # Hard feature mining
+            # D = (s - t)^2
+            D = (s - t_exp).pow(2)                              # (M, B, C, W, H)
+            M, B, C, W, H = D.shape
+            # flatten per sample
+            D_flat = D.view(M*B, C*W*H)                        # (M*B, C*W*H)
+            # compute phard quantile per row
+            thresh = D_flat.quantile(self.phard, dim=1, keepdim=True)  # (M*B,1)
+            mask = D_flat >= thresh                             # (M*B, C*W*H)
+            # count hard examples, avoid div0
+            counts = mask.sum(dim=1).clamp(min=1).float()       # (M*B,)
+            # sum only hard diffs
+            loss_per = (D_flat * mask).sum(dim=1) / counts      # (M*B,)
+            loss = loss_per.mean()
+        else:
+            # Plain MSE
+            loss = F.mse_loss(s, t_exp)
+
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -152,7 +199,15 @@ class UninformedStudents(nn.Module):
         for student in self.students:
             student.eval()
 
-    def forward(self, image, label=None):
+    def remove_decoder(self):
+        """
+        Removes the decoder layer from the student and teacher models.
+        """
+        for student in self.students:
+            student.decode = torch.nn.Identity()
+        self.teacher.decode = torch.nn.Identity()
+
+    def forward(self, x, label=None):
         """
         Forward pass of the detector model.
 
@@ -162,19 +217,54 @@ class UninformedStudents(nn.Module):
         Returns:
             torch.Tensor, torch.Tensor: The regression error and predictive uncertainty.
         """
-        teacher_outputs = self.teacher(image).detach().squeeze()
-        teacher_outputs_expanded = teacher_outputs.expand(len(self.students), *teacher_outputs.shape)
+        t = self.teacher(x).detach()
+
+        # Normalize the teacher outputs if needed
+        t_norm = (t - self.teacher_mean[None, ..., None, None]) \
+                 / self.teacher_std[ None, ..., None, None]
+        t_norm = t_norm.squeeze()  # remove any singleton dims
+
+        t_exp = t_norm.expand(len(self.students), *t_norm.shape)
         
-        all_student_outputs = torch.stack([student(image).squeeze() for student in self.students])
+        s = torch.stack([student(x).squeeze() for student in self.students])
         
-        students_mean = all_student_outputs.mean(dim=0)
+        students_mean = s.mean(dim=0)
         
-        squared_diffs = (students_mean - teacher_outputs_expanded) ** 2
+        squared_diffs = (students_mean - t_exp) ** 2
         regression_error = squared_diffs.mean()
         
-        predictive_uncertainty = all_student_outputs.var(dim=0).mean()
+        predictive_uncertainty = s.var(dim=0).mean()
         
         return regression_error.item(), predictive_uncertainty.item()
+
+class PetrainedDescriptor(UninformedStudents):
+    """
+    A detector model that uses a pre-trained descriptor for anomaly detection.
+
+    Attributes:
+        patch_size (int): The size of the patches.
+        dataset (str): The name of the dataset.
+        num_students (int): The number of student models.
+        teacher (torch.nn.Module): The teacher model.
+        students (list): The student models.
+        criterion (torch.nn.Module): The loss criterion.
+        optimizer (torch.optim.Optimizer): The optimizer.
+        device (torch.device): The device to run the models on.
+    """
+
+    def __init__(self, config, device='cpu'):
+        super(PetrainedDescriptor, self).__init__(config, device)
+
+    def save_pretrain(self, filename):
+        """
+        Saves the first student model as the pre-trained patch descriptor.
+        Args:
+            path (str): The directory where the model will be saved.
+        """
+        torch.save(self.students[0].state_dict(), filename)
+        print(f"Pre-trained model saved to {filename}")
+
+
 
 def init_model_cifar(device, dataset='cifar'):
     teacher = resnet18_classifier(device, dataset=dataset, pretrained=True)

@@ -2,11 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import torch
-import torch.nn as nn
-
-
-
 
 def unwarp_pool(x, s):
     """
@@ -50,37 +45,37 @@ def modify_resnet_for_dense(model):
     return model
 
 class Patch7Descriptor(nn.Module):
-    def __init__(self, dim=3):
+    def __init__(self, dim=3, padding='same'):
         super(Patch7Descriptor, self).__init__()
         # For a 7x7 patch, three conv layers with kernel size 3 reduce spatial size to 1x1.
-        self.conv1 = nn.Conv2d(in_channels=dim, out_channels=128, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1)
-        self.conv3 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)
-        # 1x1 convolution to map 256 channels to 512.
-        self.decode = nn.Conv2d(in_channels=256, out_channels=512, kernel_size=1, stride=1, padding=0)
+        self.conv1 = nn.Conv2d(in_channels=dim, out_channels=128, kernel_size=3, stride=1, padding=padding)
+        self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=padding)
+        self.conv3 = nn.Conv2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=padding)
+        # 1x1 convolution to map 128 channels to 512.
+        self.decode = nn.Conv2d(in_channels=128, out_channels=512, kernel_size=1, stride=1, padding=padding)
         
         # Leaky ReLU with negative slope 5e-3
         self.leaky_relu = nn.LeakyReLU(negative_slope=5e-3)
 
     def forward(self, x):
         # x: (N, dim, 7, 7)
-        x = self.leaky_relu(self.conv1(x))  # (N, 128, 5, 5)
-        x = self.leaky_relu(self.conv2(x))  # (N, 256, 3, 3)
-        x = self.leaky_relu(self.conv3(x))  # (N, 256, 1, 1)
-        x = self.decode(x)                  # (N, 512, 1, 1)
+        x = self.leaky_relu(self.conv1(x))
+        x = self.leaky_relu(self.conv2(x))
+        x = self.leaky_relu(self.conv3(x))
+        x = self.decode(x)
         return x
 
 class Patch17Descriptor(nn.Module):
-    def __init__(self, dim=3):
+    def __init__(self, dim=3, padding='same'):
         super(Patch17Descriptor, self).__init__()
 
         # Architecture for p = 17
-        self.conv1 = nn.Conv2d(in_channels=dim, out_channels=128, kernel_size=5, stride=1, padding=2)
-        self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=5, stride=1, padding=2)
-        self.conv3 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=5, stride=1, padding=2)
-        self.conv4 = nn.Conv2d(in_channels=256, out_channels=128, kernel_size=5, stride=1, padding=2)
+        self.conv1 = nn.Conv2d(in_channels=dim, out_channels=128, kernel_size=5, stride=1, padding=padding)
+        self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=5, stride=1, padding=padding)
+        self.conv3 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=5, stride=1, padding=padding)
+        self.conv4 = nn.Conv2d(in_channels=256, out_channels=128, kernel_size=5, stride=1, padding=padding)
         
-        self.decode = nn.Conv2d(in_channels=128, out_channels=512, kernel_size=1, stride=1, padding=0)
+        self.decode = nn.Conv2d(in_channels=128, out_channels=512, kernel_size=1, stride=1, padding=padding)
         
         # Leaky ReLU with slope 5e-3
         self.leaky_relu = nn.LeakyReLU(negative_slope=5e-3)
@@ -98,68 +93,123 @@ class Patch17Descriptor(nn.Module):
         return x
 
 class Patch33Descriptor(nn.Module):
-    def __init__(self, dim=3):
+    def __init__(self, dim=3, padding='same'):
         super(Patch33Descriptor, self).__init__()
-
-        # Architecture for p = 33
-        self.conv1      = nn.Conv2d(in_channels=dim, out_channels=128,  kernel_size=5, stride=1)
-        self.maxpool1   = nn.MaxPool2d(                                 kernel_size=2, stride=2)
-        self.conv2      = nn.Conv2d(in_channels=128, out_channels=256,  kernel_size=5, stride=1)
-        self.maxpool2   = nn.MaxPool2d(                                 kernel_size=2, stride=2)
-        self.conv3      = nn.Conv2d(in_channels=256, out_channels=256,  kernel_size=2, stride=1)
-        self.conv4      = nn.Conv2d(in_channels=256, out_channels=128,  kernel_size=4, stride=1)
-        self.decode     = nn.Conv2d(in_channels=128, out_channels=512,  kernel_size=1, stride=1)
-        
-        # Leaky ReLU with slope 5e-3
+        # same convs as before
+        self.conv1    = nn.Conv2d(in_channels=dim,   out_channels=128,  kernel_size=5, stride=1, padding=padding) # Output: (B, 128, 29, 29)
+        self.maxpool1 = MultiMaxPool2d(                                 kernel_size=2, stride=2)            # Output: (B, 128, 14, 14)
+        self.conv2    = nn.Conv2d(in_channels=128,   out_channels=256,  kernel_size=5, stride=1, padding=padding) # Output: (B, 256, 10, 10)
+        self.maxpool2 = MultiMaxPool2d(                                 kernel_size=2, stride=2)            # Output: (B, 256, 5, 5)
+        self.conv3    = nn.Conv2d(in_channels=256,   out_channels=256,  kernel_size=2, stride=1, padding=padding) # Output: (B, 256, 4, 4)
+        self.conv4    = nn.Conv2d(in_channels=256,   out_channels=128,  kernel_size=4, stride=1, padding=padding) # Output: (B, 128, 1, 1)
+        self.decode   = nn.Conv2d(in_channels=128,   out_channels=512,  kernel_size=1, stride=1, padding=padding) # Output: (B, 512, 1, 1)
         self.leaky_relu = nn.LeakyReLU(negative_slope=5e-3)
 
     def forward(self, x):
+        B0 = x.size(0)
+
         x = self.leaky_relu(self.conv1(x))
-        x = self.maxpool1(x)
-        
+        # first multipool
+        x = self.maxpool1(x)                 # (B0, C1, 2,2, H1, W1)
+        B1, C1, s1, s2, H1, W1 = x.shape
+        x = x.view(B1 * s1 * s2, C1, H1, W1)     # merge shifts into batch
+
         x = self.leaky_relu(self.conv2(x))
-        x = self.maxpool2(x)
-        
+        # second multipool
+        x = self.maxpool2(x)                 # (B1*s1*s2, C2, 2,2, H2, W2)
+        B2, C2, s1, s2, H2, W2 = x.shape
+        x = x.view(B2 * s1 * s2, C2, H2, W2)
+
         x = self.leaky_relu(self.conv3(x))
         x = self.leaky_relu(self.conv4(x))
-        
-        x = self.decode(x)
-        
+        x = self.decode(x)                      # (B2*s1*s2, 512, H3, W3)
+
+        # reshape back & unwarp
+        _, C3, H3, W3 = x.shape
+        x = x.view(B2, s1, s2, C3, H3, W3)      # (B2,2,2, C3, H3, W3)
+        x = x.permute(0, 3, 1, 2, 4, 5).contiguous()  # (B2, C3,2,2,H3,W3)
+        x = unwarp_pool(x, s1)                  # (B2, C3, H3*2, W3*2)
+
+        _, C2, H2, W2 = x.shape
+        x = x.view(B1, s1, s2, C2, H2, W2)      # (B1,2,2,C2,H2,W2)
+        x = x.permute(0, 3, 1, 2, 4, 5).contiguous()
+        x = unwarp_pool(x, s1)                  # (B1, C2, H2*2, W2*2)
         return x
 
 class Patch65Descriptor(nn.Module):
-    def __init__(self, dim=3):
+    def __init__(self, dim=3, padding='same'):
         super(Patch65Descriptor, self).__init__()
-        
-        # Define layers as per the table
-        self.conv1      = nn.Conv2d(in_channels=dim, out_channels=128,  kernel_size=5, stride=1)
-        self.maxpool1   = nn.MaxPool2d(                                 kernel_size=2, stride=2)
-        self.conv2      = nn.Conv2d(in_channels=128, out_channels=128,  kernel_size=5, stride=1)
-        self.maxpool2   = nn.MaxPool2d(                                 kernel_size=2, stride=2)
-        self.conv3      = nn.Conv2d(in_channels=128, out_channels=128,  kernel_size=5, stride=1)
-        self.maxpool3   = nn.MaxPool2d(                                 kernel_size=2, stride=2)
-        self.conv4      = nn.Conv2d(in_channels=128, out_channels=256,  kernel_size=4, stride=1)
-        self.conv5      = nn.Conv2d(in_channels=256, out_channels=128,  kernel_size=3, stride=1)
-        self.decode     = nn.Conv2d(in_channels=128, out_channels=512,  kernel_size=1, stride=1)
-
-        # Activation function (Leaky ReLU with slope 5e-3)
+        # same convs as before
+        self.conv1    = nn.Conv2d(in_channels=dim, out_channels=128,    kernel_size=5, stride=1, padding=padding) # Output: (B, 128, 64, 64)
+        self.maxpool1 = MultiMaxPool2d(                                 kernel_size=2, stride=2)            # Output: (B, 128, 32, 32)
+        self.conv2    = nn.Conv2d(in_channels=128, out_channels=128,    kernel_size=5, stride=1, padding=padding) # Output: (B, 128, 28, 28)
+        self.maxpool2 = MultiMaxPool2d(                                 kernel_size=2, stride=2)            # Output: (B, 128, 14, 14)
+        self.conv3    = nn.Conv2d(in_channels=128, out_channels=128,    kernel_size=5, stride=1, padding=padding) # Output: (B, 128, 10, 10)
+        self.maxpool3 = MultiMaxPool2d(                                 kernel_size=2, stride=2)            # Output: (B, 128, 5, 5)
+        self.conv4    = nn.Conv2d(in_channels=128, out_channels=256,    kernel_size=3, stride=1, padding=padding) # Output: (B, 256, 3, 3)
+        self.conv5    = nn.Conv2d(in_channels=256, out_channels=128,    kernel_size=3, stride=1, padding=padding) # Output: (B, 128, 1, 1) ?????
+        self.decode   = nn.Conv2d(in_channels=128, out_channels=512,    kernel_size=1, stride=1, padding=padding)
         self.leaky_relu = nn.LeakyReLU(negative_slope=5e-3)
 
     def forward(self, x):
+        B0 = x.size(0)
+        #print(f"Input shape: {x.shape}")
+
         x = self.leaky_relu(self.conv1(x))
+        #print(f"After conv1: {x.shape}")
         x = self.maxpool1(x)
-        
+        #print(f"After maxpool1: {x.shape}")
+        B1, C1, s1, s2, H1, W1 = x.shape
+        x = x.view(B1 * s1 * s2, C1, H1, W1)
+        #print(f"After reshaping maxpool1: {x.shape}")
+
         x = self.leaky_relu(self.conv2(x))
+        #print(f"After conv2: {x.shape}")
         x = self.maxpool2(x)
-        
+        #print(f"After maxpool2: {x.shape}")
+        B2, C2, s1, s2, H2, W2 = x.shape
+        x = x.view(B2 * s1 * s2, C2, H2, W2)
+        #print(f"After reshaping maxpool2: {x.shape}")
+
         x = self.leaky_relu(self.conv3(x))
+        #print(f"After conv3: {x.shape}")
         x = self.maxpool3(x)
-        
+        #print(f"After maxpool3: {x.shape}")
+        B3, C3, s1, s2, H3, W3 = x.shape
+        x = x.view(B3 * s1 * s2, C3, H3, W3)
+        #print(f"After reshaping maxpool3: {x.shape}")
+
         x = self.leaky_relu(self.conv4(x))
+        #print(f"After conv4: {x.shape}")
         x = self.leaky_relu(self.conv5(x))
-        
+        #print(f"After conv5: {x.shape}")
         x = self.decode(x)
-        
+        #print(f"After decode: {x.shape}")
+
+        # reshape back & unwarp
+        _, C4, H4, W4 = x.shape
+        x = x.view(B3, s1, s2, C4, H4, W4)
+        #print(f"After reshaping before unwarp: {x.shape}")
+        x = x.permute(0, 3, 1, 2, 4, 5).contiguous()
+        #print(f"After permute: {x.shape}")
+        x = unwarp_pool(x, s1)
+        #print(f"After unwarp_pool: {x.shape}")
+
+        _, C3, H3, W3 = x.shape
+        x = x.view(B2, s1, s2, C3, H3, W3)
+        #print(f"After reshaping before unwarp: {x.shape}")
+        x = x.permute(0, 3, 1, 2, 4, 5).contiguous()
+        #print(f"After permute: {x.shape}")
+        x = unwarp_pool(x, s1)
+        #print(f"After unwarp_pool: {x.shape}")
+        _, C2, H2, W2 = x.shape
+        x = x.view(B1, s1, s2, C2, H2, W2)
+        #print(f"After reshaping before unwarp: {x.shape}")
+        x = x.permute(0, 3, 1, 2, 4, 5).contiguous()
+        #print(f"After permute: {x.shape}")
+        x = unwarp_pool(x, s1)
+        #print(f"After unwarp_pool: {x.shape}")
+        _, C1, H1, W1 = x.shape
         return x
 
 class BasicBlock(nn.Module):
@@ -253,6 +303,14 @@ class ResNet(nn.Module):
         return out
 
 class DenseCIFARResNet18(nn.Module):
+    """
+    A ResNet-18 variant for dense feature extraction on CIFAR-like datasets.
+
+    This class modifies the ResNet-18 architecture to compute dense feature maps
+    by setting all strides to 1. The `self.linear` attribute is included as a placeholder
+    for compatibility purposes with other ResNet implementations but is not used in the
+    forward pass of this model.
+    """
     def __init__(self, block, num_blocks, num_classes=10, dim=3):
         super(DenseCIFARResNet18, self).__init__()
         self.in_planes = 64
@@ -265,7 +323,7 @@ class DenseCIFARResNet18(nn.Module):
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=1)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=1)
 
-        # This is only a placeholder for compatibility pruposes, but it is not used in the forward pass.
+        # This is only a placeholder for compatibility purposes, but it is not used in the forward pass.
         self.linear = nn.Linear(512*block.expansion, num_classes)
 
     def _make_layer(self, block, planes, num_blocks, stride):
@@ -303,7 +361,7 @@ class DenseResNet18(nn.Module):
         # Original maxpool: kernel_size=3, stride=2, padding=1.
         # (Here we assume no extra padding; in practice you might need to pad/crop so that each pixel’s patch is processed.)
         if hasattr(orig_resnet, 'maxpool'):
-            self.multi_pool = MultiMaxPool2d(kernel_size=3, stride=2)
+            self.multi_pool = MultiMaxPool2d(kernel_size=2, stride=2)
             self.cifar = False
         # Keep the remaining layers unchanged (they are fully convolutional).
         self.layer1 = orig_resnet.layer1
@@ -357,28 +415,35 @@ def ResNet152():
     return ResNet(Bottleneck, [3, 8, 36, 3])
 
 class MultiMaxPool2d(nn.Module):
-    """
-    A multipooling layer that computes s×s shifted max-pooling outputs.
-    For each offset (i, j) in {0, …, s-1}^2, it applies maxpooling on a shifted input.
-    """
     def __init__(self, kernel_size, stride):
-        super(MultiMaxPool2d, self).__init__()
-        self.kernel_size = kernel_size
-        self.stride = stride
+        super().__init__()
+        self.k = kernel_size
+        self.s = stride
 
     def forward(self, x):
-        s = self.stride
+        B,C,H,W = x.shape
+        s = self.s
         pool_outs = []
-        # Compute pooling for every shift (i,j)
+        # for each shift (i,j) only pad left/top so we stay in floor‐mode
         for i in range(s):
             for j in range(s):
-                # Shift the input by slicing (assumes proper padding beforehand)
-                shifted = x[:, :, i:, j:]
-                pooled = F.max_pool2d(shifted, kernel_size=self.kernel_size, stride=self.stride, padding=1)
+                # pad only left/top, no bottom/right
+                padded = F.pad(x, (j, 0, i, 0), mode='replicate')
+                shifted = padded[:, :, i:(i+H), j:(j+W)]
+                # floor‐mode (default)
+                pooled = F.max_pool2d(shifted, kernel_size=self.k, stride=s, padding=0)
                 pool_outs.append(pooled)
-        # Stack and reshape: initial shape (B, C, s*s, H_out, W_out)
+        # stack and reshape into (B, C, s, s, H_out, W_out)
         out = torch.stack(pool_outs, dim=2)
-        # Reshape to (B, C, s, s, H_out, W_out)
-        out = out.view(x.size(0), x.size(1), s, s, out.size(-2), out.size(-1))
+        B, C, SS, H_out, W_out = out.shape
+        out = out.view(B, C, s, s, H_out, W_out)
         return out
 
+
+
+if __name__ == "__main__":
+    # Example usage
+    model = Patch65Descriptor(dim=3)
+    x = torch.randn(1, 3, 224, 224)  # Example input
+    output = model(x)
+    print(output.shape) 

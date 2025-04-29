@@ -4,12 +4,14 @@
     "model_path": "models/imagenet_us",
     "dataset": "imagenet",
     "patch_size": 17,
-    "num_students": 10,
+    "num_students": 1,
     "train": {
-        "steps": 5000000,
-        "batch_size": 1,
+        "steps": 50000,
+        "batch_size": 64,
         "learning_rate": 0.0001,
-        "test_interval": 20000,
-        "test_samples": 500
+        "weight_decay": 0.00001,
+        "beta1": 0.9,
+        "beta2": 0.999,
+        "eps": 1e-8
     }
 }

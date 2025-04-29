@@ -1,10 +1,10 @@
 {
-    "experiment_name": "benchmark_cifar_ensFalse",
+    "experiment_name": "benchmark_cifar2",
     "target_model_path": "models/resnet18_cifar.pth",
-    "acgan_path": "models/cifar_acgan",
-    "uninformed_students_path": "models/cifar_us_fast_best",
+    "acgan_path": "models/resgan90",
+    "uninformed_students_path": "models/cifar_us_best",
     "dataset": "cifar",
-    "patch_size": 7,
+    "patch_size": 17,
     "num_students": 10,
     "test": {
         "attack_list": [
@@ -15,16 +15,10 @@
                 "targeted": 1
             },
             {
-                "type": "fgsm",
-                "epsilon": 0.05,
-                "constraint": "inf",
-                "targeted": -1
-            },
-            {
                 "type": "pgd",
                 "epsilon": 0.1,
                 "constraint": "inf",
-                "targeted": false,
+                "targeted": true,
                 "iterations": 100,
                 "step_size":  0.01
             },
@@ -32,38 +26,13 @@
                 "type": "pgd",
                 "epsilon": 0.3,
                 "constraint": "inf",
-                "targeted": false,
+                "targeted": true,
                 "iterations": 100,
                 "step_size": 0.01
-            },
-            {
-                "type": "pgd",
-                "epsilon": 2,
-                "constraint": "2",
-                "targeted": false,
-                "iterations": 100,
-                "step_size": 0.01
-            },
-            {
-                "type": "pgd",
-                "epsilon": 10,
-                "constraint": "2",
-                "targeted": false,
-                "iterations": 100,
-                "step_size": 0.01
-            },
-            {
-                "type": "cw",
-                "constraint": "inf",
-                "targeted": -1,
-                "kappa": 14,
-                "epsilon": 14,
-                "iterations": 1000,
-                "step_size": 0.01
-            }           
+            }          
         ],
-        "ensure_succesful_attack": false,
-        "samples": 5000,
+        "ensure_succesful_attack": true,
+        "samples": 500,
         "save": false
     }
 }

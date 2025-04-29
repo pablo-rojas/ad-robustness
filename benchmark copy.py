@@ -87,7 +87,7 @@ def main(config):
     i = 0
     pbar = tqdm(total=n_samples, desc="Evalutaing on Natural Images")
     for images, labels in test_loader:
-        y = target_model(norm(images.to(device))).detach().cpu()
+        y = target_model(images.to(device)).detach().cpu()
 
         # if incorrect prediction, skip the sample
         if ensure_succesful_attack and (y.argmax(1) != labels).sum().item() > 0:
@@ -158,7 +158,7 @@ def main(config):
         for images, labels in test_loader:
             
             # if incorrect prediction, skip the sample
-            if ensure_succesful_attack and (target_model(norm(images.to(device))).argmax(1) != labels.to(device)).sum().item() > 0:
+            if ensure_succesful_attack and (target_model(images.to(device)).argmax(1) != labels.to(device)).sum().item() > 0:
                 continue
 
             # Choose target labels depending on the attack type.
@@ -177,10 +177,10 @@ def main(config):
                 raise ValueError("Invalid attack type: " + attack_config['type'])
 
             # Compute classification accuracy on adversarial images (using the classifier on GPU).
-            y = target_model(norm(adv_images).to(device)).detach().cpu()
+            y = target_model(adv_images.to(device)).detach().cpu()
 
-            if ensure_succesful_attack and (y.argmax(1) != labels).sum().item() < len(labels):
-                continue
+            # if ensure_succesful_attack and (y.argmax(1) != labels).sum().item() < len(labels):
+            #     continue
                     
             # Calculate the accuracy on adversarial images.
             adv_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
@@ -190,7 +190,7 @@ def main(config):
             linf_dist.append(torch.norm(adv_images - images.to(device), p=float('inf')).item())
 
             # Calculate AS for ACGAN
-            as_ACGAN = sd_statistic(gan.discriminator(adv_images), y.argmax(1))
+            as_ACGAN = sd_statistic(gan.discriminator(adv_images),target_labels) #y.argmax(1))
             adv_as_ACGAN.append(as_ACGAN.item())
 
             # Calculate AS for Uninformed Students

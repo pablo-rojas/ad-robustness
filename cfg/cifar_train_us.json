@@ -1,9 +1,9 @@
 {
-    "experiment_name": "train_us_cifar_beta0.95",
+    "experiment_name": "train_us_cifar",
     "method": "UninformedStudents",
-    "model_path": "models/cifar_us_beta",
+    "model_path": "models/cifar_us",
     "dataset": "cifar",
-    "patch_size": 7,
+    "patch_size": 17,
     "num_students": 10,
     "train": {
         "steps": 100000,
@@ -13,7 +13,8 @@
         "beta1": 0.9,
         "beta2": 0.999,
         "eps": 1e-8,
+        "phard": 0.0,
         "test_interval": 0,
-        "test_samples": 2000
+        "test_samples": 500
     }
 }

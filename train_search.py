@@ -3,23 +3,44 @@ import argparse
 from src.misc_utils import load_config
 import numpy as np
 
-def random_search(template_config, lr_range, batch_size_range, beta1_range, n_iter):
+def random_search(template_config, lr_range=None, batch_size_range=None, beta1_range=None, weigth_decay_range=None, n_iter=1000):
     for i in range(n_iter):
         np.random.seed()
         config = template_config.copy()
-        lr = np.exp(np.random.uniform(np.log(lr_range[0]), np.log(lr_range[1])))
-        lr = float(lr)
-        lr = float(f"{lr:.1e}")
-        batch_size = int(np.exp(np.random.uniform(np.log(batch_size_range[0]), np.log(batch_size_range[1]))))
-        beta1 = np.exp(np.random.uniform(np.log(beta1_range[0]), np.log(beta1_range[1])))
-        beta1 = float(beta1)
-        beta1 = float(f"{beta1:.2e}")
+        
+        # Only set learning rate if range is provided
+        if lr_range is not None:
+            lr = np.exp(np.random.uniform(np.log(lr_range[0]), np.log(lr_range[1])))
+            lr = float(f"{float(lr):.1e}")
+            config['train']['learning_rate'] = lr
+        else:
+            lr = config['train'].get('learning_rate', 'default')
+            
+        # Only set batch size if range is provided
+        if batch_size_range is not None:
+            batch_size = int(np.exp(np.random.uniform(np.log(batch_size_range[0]), np.log(batch_size_range[1]))))
+            config['train']['batch_size'] = batch_size
+        else:
+            batch_size = config['train'].get('batch_size', 'default')
+            
+        # Only set beta1 if range is provided
+        if beta1_range is not None:
+            beta1 = np.exp(np.random.uniform(np.log(beta1_range[0]), np.log(beta1_range[1])))
+            beta1 = float(f"{float(beta1):.2e}")
+            config['train']['beta1'] = beta1
+        else:
+            beta1 = config['train'].get('beta1', 'default')
 
-        config['train']['learning_rate'] = lr
-        config['train']['batch_size'] = batch_size
-        config['train']['beta1'] = beta1
-        config["experiment_name"] =  config["dataset"] + "_rs_lr_{}_bs_{}_beta1_{}".format(lr, batch_size, beta1)
-        config["model_path"] = "models/" + config["dataset"] + "_rs_lr_{}_bs_{}_beta1_{}".format(lr, batch_size, beta1)
+        # Only set weight decay if range is provided
+        if weigth_decay_range is not None:
+            weight_decay = np.exp(np.random.uniform(np.log(weigth_decay_range[0]), np.log(weigth_decay_range[1])))
+            weight_decay = float(f"{float(weight_decay):.1e}")
+            config['train']['weight_decay'] = weight_decay
+        else:
+            weight_decay = config['train'].get('weight_decay', 'default')
+
+        config["experiment_name"] = f"{config['dataset']}_rs_lr_{lr}_bs_{batch_size}_beta1_{beta1}"
+        config["model_path"] = f"models/{config['dataset']}_rs_lr_{lr}_bs_{batch_size}_beta1_{beta1}"
         print(config)
         main(config)
 
@@ -67,11 +88,12 @@ args = parser.parse_args()
 
 template_config = load_config(args.config)
 
-lr_range = [1e-5, 1e-2]
+lr_range = [5e-5, 5e-3]
 batch_size_range = [1, 128]
 beta1_range = [0.7, 0.999]
+weight_decay_range = [1e-7, 0.1]
 n_iter = 1000
 
 #increasing_grid_search(template_config, lr_range, batch_size_range, [2, 3, 4, 5, 6])
 
-random_search(template_config, lr_range, batch_size_range, beta1_range, n_iter)
+random_search(template_config, lr_range, batch_size_range, beta1_range, weight_decay_range, n_iter)

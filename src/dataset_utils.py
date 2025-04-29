@@ -25,8 +25,9 @@ def seed_worker(worker_id):
     
 class BaseDataset(Dataset):
     def make_loaders(self, workers=4, batch_size=100, only_train=False, 
-                     only_test=False, seed=42):
+                     only_test=False, seed=42, fixed_order=False):
         # Create deterministic but shuffled indices
+        train_indices = list(range(len(self.train_data)))
         val_indices = list(range(len(self.val_data))) if hasattr(self, 'val_data') else []
         test_indices = list(range(len(self.test_data)))
         
@@ -37,12 +38,20 @@ class BaseDataset(Dataset):
         generator = torch.Generator().manual_seed(seed)
 
         # Create the data loaders
-        train_loader = DataLoader(
-            self.train_data, batch_size=batch_size, 
-            shuffle=True,  # dynamic shuffling for training
-            num_workers=workers, pin_memory=True,
-            worker_init_fn=seed_worker  # still using worker seeding if needed
-        )
+        if fixed_order:
+            train_loader = DataLoader(
+                self.train_data, batch_size=batch_size, 
+                sampler=FixedOrderSampler(train_indices),
+                num_workers=workers, pin_memory=True,
+                worker_init_fn=seed_worker, generator=generator  # still using worker seeding if needed
+            )
+        else:
+            train_loader = DataLoader(
+                self.train_data, batch_size=batch_size, 
+                shuffle=True,  # dynamic shuffling for training
+                num_workers=workers, pin_memory=True,
+                worker_init_fn=seed_worker  # still using worker seeding if needed
+            )
         
         val_loader = None
         if hasattr(self, 'val_data'):
@@ -64,18 +73,25 @@ class BaseDataset(Dataset):
         if only_train: return train_loader, val_loader
         if only_test: return test_loader
         return (train_loader, val_loader, test_loader) if val_loader else (train_loader, test_loader)
+    
 class MNISTDataset(BaseDataset):
-    def __init__(self, data_path='./data/mnist', seed=42, normalize_images=False):
+    def __init__(self, data_path='./data/mnist', seed=42, random_crop_size=None):
         # Set dataset name and normalization parameters
         self.ds_name = 'mnist'
         self.mean = torch.tensor([0.5])
         self.std = torch.tensor([0.5])
         self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
         
-        # Define transformations based on normalize_images flag
-        transform_list = [transforms.ToTensor()]
-        if normalize_images:
-            transform_list.append(self.normalize)
+        # For descriptor pretraining, we use normalization and random cropping
+        if random_crop_size is not None:
+            transform_list = [
+            transforms.RandomCrop(random_crop_size),
+            transforms.ToTensor(),
+            self.normalize
+        ]
+        else:
+            transform_list = [transforms.ToTensor()]
+
         transform = transforms.Compose(transform_list)
 
         # Set seed for reproducibility
@@ -97,17 +113,24 @@ class MNISTDataset(BaseDataset):
             mnist_train, [train_size, val_size], generator=generator)
         
 class CIFARDataset(BaseDataset):
-    def __init__(self, data_path='./data/cifar10', seed=42, normalize_images=False):
+    def __init__(self, data_path='./data/cifar10', seed=42, random_crop_size=None):
         # Set dataset name and normalization parameters needed for adv attacks
         self.ds_name = 'cifar'
         self.mean = torch.tensor([0.4914, 0.4822, 0.4465])
         self.std = torch.tensor([0.2023, 0.1994, 0.2010])
         self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
 
-        # Define transformations based on normalize_images flag
-        transform_list = [transforms.ToTensor()]
-        if normalize_images:
-            transform_list.append(self.normalize)
+
+        # For descriptor pretraining, we use normalization and random cropping
+        if random_crop_size is not None:
+            transform_list = [
+            transforms.RandomCrop(random_crop_size),
+            transforms.ToTensor(),
+            self.normalize
+        ]
+        else:
+            transform_list = [transforms.ToTensor()]
+
         transform = transforms.Compose(transform_list)
 
         # Set seed for reproducibility
@@ -130,20 +153,27 @@ class CIFARDataset(BaseDataset):
         
 
 class ImageNetDataset(BaseDataset):
-    def __init__(self, data_path='./data/ImageNet', normalize_images=False):
+    def __init__(self, data_path='./data/ImageNet', random_crop_size=None):
         # Set dataset name and normalization parameters needed for adv attacks
         self.ds_name = 'imagenet'
         self.mean = torch.tensor([0.485, 0.456, 0.406])
         self.std = torch.tensor([0.229, 0.224, 0.225])
         self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
 
-        # Define transformations based on normalize_images flag
-        transform_list = [
+        # For descriptor pretraining, we use normalization and random cropping
+        if random_crop_size is not None:
+            transform_list = [
             transforms.Resize((224, 224)),
-            transforms.ToTensor()
+            transforms.RandomCrop(random_crop_size),
+            transforms.ToTensor(),
+            self.normalize
         ]
-        if normalize_images:
-            transform_list.append(self.normalize)
+        else:
+            transform_list = [
+                transforms.Resize((224, 224)),
+                transforms.ToTensor()
+            ]
+
         transform = transforms.Compose(transform_list)
 
         # Load ImageNet dataset using torchvision
@@ -154,13 +184,13 @@ class ImageNetDataset(BaseDataset):
         self.test_data = datasets.ImageFolder(root=f"{data_path}/val", 
                                              transform=transform)
 
-def get_dataset(dataset_name):
+def get_dataset(dataset_name, random_crop_size=None):
     if dataset_name == 'mnist':
-        return MNISTDataset()
+        return MNISTDataset(random_crop_size=random_crop_size)
     elif dataset_name == 'cifar':
-        return CIFARDataset()
+        return CIFARDataset(random_crop_size=random_crop_size)
     elif dataset_name == 'imagenet':
-        return ImageNetDataset()
+        return ImageNetDataset(random_crop_size=random_crop_size)
     else:
         raise ValueError(f'Invalid dataset: {dataset_name}')
     

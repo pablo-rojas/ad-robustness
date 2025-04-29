@@ -126,8 +126,8 @@ if __name__ == "__main__":
                         help='Path to the configuration file.')
     args = parser.parse_args()
 
-    dataset_name = 'cifar'
-    experiment_name = 'cifar_acgan'
+    dataset_name = 'imagenet'
+    experiment_name = 'imagenet_acgan'
 
     # Create directory for saving the trained model
     save_path = os.path.join("models", experiment_name)
@@ -135,7 +135,7 @@ if __name__ == "__main__":
 
     # Load your dataset using your own dataset class; fixed batch size=100.
     dataset = get_dataset(dataset_name)
-    train_loader, val_loader, test_loader = dataset.make_loaders(workers=4, batch_size=256)
+    train_loader, val_loader, test_loader = dataset.make_loaders(workers=4, batch_size=64)
 
     test_loader.dataset.ds_name = dataset_name
 
@@ -145,12 +145,17 @@ if __name__ == "__main__":
     model = resnet18_classifier(device=device, dataset=dataset_name)
     im_channel = 3  # resnet18 expects 3-channel images
     in_dim = 500
-    class_dim = 10
+    if dataset_name == 'imagenet':
+        num_classes = 1000
+    else:
+        # For MNIST, and CIFAR10, we can use 10 classes.
+        # Adjust this based on your dataset.
+        num_classes = 10
 
     if (dataset_name == 'mnist'):
          gan = ACGAN(
         in_dim=50,
-        class_dim=10,
+        class_dim=num_classes,
         g_filters=[384, 192, 96, 48, im_channel],
         g_strides=[1, 2, 2, 2],
         d_filters=[16, 32, 64, 128, 256, 512],
@@ -158,16 +163,16 @@ if __name__ == "__main__":
         CNN=model
     )
     else:
-        gan = ACGAN_Res(in_dim=in_dim, class_dim=class_dim, CNN=model)
+        gan = ACGAN_Res(in_dim=in_dim, class_dim=num_classes, CNN=model)
 
    
     print("Starting ACGAN training ...")
     # The gan.train() method internally loops over epochs and batches.
-    #gan.train(train_loader, lr=0.0002, num_epochs=90)
+    gan.train(train_loader, lr=0.0002, num_epochs=90)
 
     # Save the generator and discriminator models after training.
-    #gan.save_model(save_path)
-    #print(f"Models saved to {save_path}")
+    gan.save_model(save_path)
+    print(f"Models saved to {save_path}")
 
     gan.load_model(save_path)
     gan.generator.eval()
