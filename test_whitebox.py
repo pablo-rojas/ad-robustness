@@ -29,12 +29,11 @@ def main(config):
     targeted = True  # Set to True if you want to use targeted attacks
     only_success = False  # Set to True if you want to only evaluate successful attacks
     detector_type = 'US'  # Detector type: 'US' for Uninformed Students, 'ACGAN' for ACGAN
-    full_table = False # Set to True if you want to print the full table with all columns
     normalize_grad = False # Set to True if you want to normalize the gradients during the attack
 
     # List of k values to sweep
     #ks = [0.0, 1.0, 100.0, 10000.0]
-    ks = [0.0, 0.01, 0.025, 0.05, 0.1, 1.0, 2.0, 5.0]
+    ks = [0.0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0]
     # ks = [0.0]
     # ks =[1000.0]
 
@@ -181,11 +180,9 @@ def main(config):
         "k",
         "Classifier Acc",
         "Detector Acc (10% FPR)",
-        "Classifier Acc w/o det att",
         "Detector Acc (1% FPR)",
-        "Classifier Acc w/o det att",
-        "Att Success Rate",
-        "pAUC-0.2"
+        "pAUC-0.2",
+        "Attack Success Rate"
     ]
     rows = []
 
@@ -193,60 +190,50 @@ def main(config):
         "Nat",
         f"{classifier_nat_acc:.1f}",
         f"{(nat_as <= th10).sum() / len(nat_as) * 100:.1f}",
-        f"{nat_accuracy[nat_as <= th10].mean() * 100:.1f}",
         f"{(nat_as <= th1).sum() / len(nat_as) * 100:.1f}",
-        f"{nat_accuracy[nat_as <= th1].mean() * 100:.1f}",
-        "0.0",
+        "",
         ""
     ])
 
     for k in ks:
         as_k = adv_wb_as[k]
         acc_k = adv_wb_accuracy[k]
+        succ_k = att_success[k]  # original per-sample adv success (bool array)
 
-        # Detector decisions
+        # Detector decision thresholds
         det10 = (as_k > th10).sum() / len(as_k) * 100
-        keep10 = acc_k[as_k <= th10]
-        cls_keep10 = keep10.mean() * 100 if keep10.size > 0 else 0.0
-
         det1 = (as_k > th1).sum() / len(as_k) * 100
-        keep1 = acc_k[as_k <= th1]
-        cls_keep1 = keep1.mean() * 100 if keep1.size > 0 else 0.0
+
+        # attack-success definition: both classifier fooled AND not detected at 10% FPR.
+        # Evaluated only on samples that were classified correctly by the classifier on
+        # natural images.
+        atk_succ_rate = np.logical_and(succ_k[nat_accuracy], as_k[nat_accuracy] <= th10).mean() * 100
+        # Note how how filtering the results with nat_accuracy already reduces the array
+        # size to the number of samples that were classified correctly by the classifier on
+        # natural images. This is important because we want to compute the attack success
+        # rate only on those samples.
+
+        # success_and = np.logical_and(succ_k, as_k <= th10)
+        # atk_succ_rate = success_and.mean() * 100
+
+        # success_and = np.logical_and(succ_k[nat_accuracy], as_k[nat_accuracy] <= th10)
 
         rows.append([
             f"{k}",
             f"{acc_k.mean() * 100:.1f}",
             f"{det10:.1f}",
-            f"{cls_keep10:.1f}",
             f"{det1:.1f}",
-            f"{cls_keep1:.1f}",
-            f"{(att_success[k].mean()) * 100:.1f}",
-            f"{pAUC[k]:.4f}"
+            f"{pAUC[k]:.4f}",
+            f"{atk_succ_rate:.1f}",
         ])
 
-    # Print either full or reduced table
-    if full_table:
-        print("\n\nResults across different k values (full):\n")
-        print(tabulate(rows, headers=headers, floatfmt=".1f"))
-    else:
-        # Only display k, Classifier Acc, Det(10% FPR), Det(1% FPR)
-        short_headers = [
-            "k",
-            "Classifier Acc",
-            "Detector Acc (10% FPR)",
-            "Detector Acc (1% FPR)",
-            "pAUC-0.2"
-        ]
-        # Select columns 0,1,2,4 from each row
-        short_rows = [[r[i] for i in (0, 1, 2, 4, 5)] for r in rows]
+    print("\n\nResults across different k values for a PGD attack on " + ('robust' if robust_target else 'non-robust') + " target model and "   + detector_type + " detector:\n")
+    print(tabulate(rows, headers=headers, floatfmt=".1f"))
 
-        print("\n\nResults across different k values for a PGD attack on " + ('robust' if robust_target else 'non-robust') + " target model and"   + detector_type + " detector:\n")
-        print(tabulate(short_rows, headers=short_headers, floatfmt=".1f"))
+    return headers, rows
 
 def initialize_target_model(config, robust_target, device):
-    if robust_target is None:
-        target_model = resnet18_classifier(device, config['dataset'], config['target_model_path'])
-    elif robust_target:
+    if robust_target:
         target_model = resnet18()
 
         ckpt = torch.load('models/resnet18_cifar_rob.pt', map_location=device)
@@ -265,20 +252,22 @@ def initialize_target_model(config, robust_target, device):
         state_dict = {k: v for k, v in fixed_sd.items() if k in model_keys}
         target_model.load_state_dict(state_dict)
     else:
-        ckpt = torch.load('models/cifar_nat.pt', map_location=device)
-        raw_sd = ckpt['model']
+        target_model = resnet18_classifier(device, config['dataset'], config['target_model_path'])
+
+        # ckpt = torch.load('models/cifar_nat.pt', map_location=device)
+        # raw_sd = ckpt['model']
         
-        fixed_sd = {}
-        for k, v in raw_sd.items():
-            name = k
-            if name.startswith('module.'):
-                name = name[len('module.'):]
-            if name.startswith('model.'):
-                name = name[len('model.'):]
-            fixed_sd[name] = v
-        model_keys = set(target_model.state_dict().keys())
-        state_dict = {k: v for k, v in fixed_sd.items() if k in model_keys}
-        target_model.load_state_dict(state_dict)
+        # fixed_sd = {}
+        # for k, v in raw_sd.items():
+        #     name = k
+        #     if name.startswith('module.'):
+        #         name = name[len('module.'):]
+        #     if name.startswith('model.'):
+        #         name = name[len('model.'):]
+        #     fixed_sd[name] = v
+        # model_keys = set(target_model.state_dict().keys())
+        # state_dict = {k: v for k, v in fixed_sd.items() if k in model_keys}
+        # target_model.load_state_dict(state_dict)
     
     
     target_model.eval()

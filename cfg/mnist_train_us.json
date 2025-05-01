@@ -4,7 +4,7 @@
     "method": "UninformedStudents",
     "model_path": "models/mnist_us",
     "dataset": "mnist",
-    "patch_size": 17,
+    "patch_size": 7,
     "num_students": 10,
     "train": {
         "steps": 100000,

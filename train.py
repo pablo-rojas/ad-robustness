@@ -255,7 +255,7 @@ def main(config):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate the detector model.")
-    parser.add_argument('--config', type=str, default='cfg/mnist_train_us.json', help='Path to the configuration file.')
+    parser.add_argument('--config', type=str, default='cfg/imagenet_train_us.json', help='Path to the configuration file.')
     args = parser.parse_args()
     config = load_config(args.config)
 
