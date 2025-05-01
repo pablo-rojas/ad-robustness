@@ -205,7 +205,7 @@ class UninformedStudents(nn.Module):
         """
         for student in self.students:
             student.decode = torch.nn.Identity()
-        self.teacher.decode = torch.nn.Identity()
+        self.teacher.decode = torch.nn.Identity()  
 
     def forward(self, x, label=None):
         """
@@ -235,7 +235,7 @@ class UninformedStudents(nn.Module):
         
         predictive_uncertainty = s.var(dim=0).mean()
         
-        return regression_error.item(), predictive_uncertainty.item()
+        return regression_error, predictive_uncertainty
 
 class PetrainedDescriptor(UninformedStudents):
     """

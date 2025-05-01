@@ -12,7 +12,6 @@ from src.misc_utils import *
 
 from ACGAN.attacks.FGSM import FGSM
 
-
 def train(config, device, norm, writer, train_loader, detector, val_loader=None):
     
     # Parameters from JSON
@@ -75,8 +74,7 @@ def train(config, device, norm, writer, train_loader, detector, val_loader=None)
         print(f"Epoch: {epoch}, pAUC: {results['pAUC']}, time: {epoch_time:.1f}s, Est. time left: {estimated_time_left/60:.1f}min")
         epoch += 1
 
-
-def val(detector, val_loader, device, norm, n_samples=100, epsilon=0.03125):
+def val(detector, val_loader, device, norm, n_samples=100, epsilon=0.05):
     dataset = val_loader.dataset
     target_model = resnet18_classifier(device, dataset.ds_name, path=model_paths[dataset.ds_name])
 
@@ -92,11 +90,11 @@ def val(detector, val_loader, device, norm, n_samples=100, epsilon=0.03125):
 
         if isinstance(detector, UninformedStudents):
             re, pu = detector.forward(images, labels)
-            e_list.append(re)
-            u_list.append(pu)
+            e_list.append(re.detach().cpu().item())
+            u_list.append(pu.detach().cpu().item())
         else:
-            anomaly_score = detector.forward(images)
-            nat_as.append(anomaly_score.item())
+            anomaly_score = detector.forward(images).detach().cpu().item()
+            nat_as.append(anomaly_score)
 
         i += 1
         if i >= n_samples:
@@ -128,7 +126,7 @@ def val(detector, val_loader, device, norm, n_samples=100, epsilon=0.03125):
         if isinstance(detector, UninformedStudents):
             re, pu = detector.forward(norm(adv_images).to(device)) # For conditional models I should pass the target model prediction
             anomaly_score = (re - detector.e_mean) / detector.e_std + (pu - detector.v_mean) / detector.v_std
-            adv_as.append(anomaly_score)
+            adv_as.append(anomaly_score.detach().cpu().item())
         else:
             anomaly_score = detector.forward(norm(adv_images).to(device))
             adv_as.append(anomaly_score.cpu().item())
@@ -214,10 +212,14 @@ def precompute_teacher_stats(detector, train_loader, norm, device, max_images=No
     print(f"  mean  range: {mean.min():.4f} … {mean.max():.4f}")
     print(f"  std   range: {std.min():.4f} … {std.max():.4f}")
 
-
 def main(config):
     # Initialize the device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    seed = config['seed']
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+
 
     # Initialize the Tensorboard writer
     writer = UnifiedSummaryWriter()
@@ -226,7 +228,7 @@ def main(config):
 
     # Get the dataset and create data loaders
     dataset = get_dataset(config['dataset'])
-    train_loader, val_loader, test_loader = dataset.make_loaders(batch_size=config['train']['batch_size'], workers=4)
+    train_loader, val_loader, test_loader = dataset.make_loaders(batch_size=config['train']['batch_size'], workers=4, seed=seed)
     val_loader.dataset.ds_name = config['dataset']
     test_loader.dataset.ds_name = config['dataset']
 
@@ -253,7 +255,7 @@ def main(config):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate the detector model.")
-    parser.add_argument('--config', type=str, default='cfg/cifar_train_us.json', help='Path to the configuration file.')
+    parser.add_argument('--config', type=str, default='cfg/mnist_train_us.json', help='Path to the configuration file.')
     args = parser.parse_args()
     config = load_config(args.config)
 

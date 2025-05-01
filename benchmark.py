@@ -98,12 +98,12 @@ def main(config):
 
         # Calculate AS for ACGAN
         as_ACGAN = sd_statistic(gan.discriminator(images.to(device)), labels)
-        nat_as_ACGAN.append(as_ACGAN.item())
+        nat_as_ACGAN.append(as_ACGAN.detach().cpu().item())
 
         # Calculate AS from Regression Error (ru) and Predictive Uncertanty (pu) for Uninformed Students
         re, pu = detector.forward(norm(images.to(device)), labels)
         as_UninformedStudents = (re - detector.e_mean) / detector.e_std + (pu - detector.v_mean) / detector.v_std
-        nat_as_UninformedStudents.append(as_UninformedStudents)
+        nat_as_UninformedStudents.append(as_UninformedStudents.detach().cpu().item())
 
         save_image(config['test']['save'], results_dir + "/img/"+str(i) + "_nat.png", norm(images)[0].detach().cpu(), dataset)
 
@@ -191,12 +191,12 @@ def main(config):
 
             # Calculate AS for ACGAN
             as_ACGAN = sd_statistic(gan.discriminator(adv_images), y.argmax(1))
-            adv_as_ACGAN.append(as_ACGAN.item())
+            adv_as_ACGAN.append(as_ACGAN.detach().cpu().item())
 
             # Calculate AS for Uninformed Students
             re, pu = detector.forward(norm(adv_images).to(device), y.argmax(1))
             as_UninformedStudents = (re - detector.e_mean) / detector.e_std + (pu - detector.v_mean) / detector.v_std
-            adv_as_UninformedStudents.append(as_UninformedStudents)
+            adv_as_UninformedStudents.append(as_UninformedStudents.detach().cpu().item())
 
             save_image(config['test']['save'], results_dir_attack + "/img/"+str(i) + "_adv.png", norm(adv_images)[0].detach().cpu(), dataset)
 

@@ -24,7 +24,7 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None, pretrained=
         device (str): The compute device to allocate the model. Defaults to 'cpu'. Set to 'cuda' for GPU acceleration.
         dataset (str): The dataset type to configure the model. Supported values are:
             - 'cifar': Initializes a ResNet18 model for CIFAR datasets.
-            - 'MNIST': Initializes a ResNet18 model for MNIST (grayscale images), modifying the input dimensions.
+            - 'mnist': Initializes a ResNet18 model for MNIST (grayscale images), modifying the input dimensions.
             - 'imagenet': Loads a pretrained ResNet18 model for ImageNet.
         path (str, optional): If provided, specifies a file path to load the model's state. For the 'MNIST' case, the state is expected under the 'net' key.
         pretrained (bool): Whether to load pretrained weights or initialize new model. Defaults to True.
@@ -38,17 +38,29 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None, pretrained=
         model = ResNet18()
         if pretrained and path is not None:
             checkpoint = torch.load(path, map_location=device, weights_only=True)
+
+        if 'net' in checkpoint:
             state_dict = checkpoint['net']
-            #state_dict = checkpoint
             if next(iter(state_dict)).startswith("module."):
                 new_state_dict = OrderedDict()
                 for key, value in state_dict.items():
                     new_key = key.replace("module.", "")
                     new_state_dict[new_key] = value
                 state_dict = new_state_dict
-
-            
-
+            model.load_state_dict(state_dict)
+        else:
+            raw_sd = checkpoint['model']
+        
+            fixed_sd = {}
+            for k, v in raw_sd.items():
+                name = k
+                if name.startswith('module.'):
+                    name = name[len('module.'):]
+                if name.startswith('model.'):
+                    name = name[len('model.'):]
+                fixed_sd[name] = v
+            model_keys = set(model.state_dict().keys())
+            state_dict = {k: v for k, v in fixed_sd.items() if k in model_keys}
             model.load_state_dict(state_dict)
 
     elif dataset=='mnist':
@@ -76,15 +88,32 @@ def resnet18_feature_extractor(device='cpu', dataset='imagenet', path="models/re
     if dataset=='cifar':
         teacher_feature_extractor = DenseCIFARResNet18(BasicBlock, [2, 2, 2, 2], dim=3).to(device) # Note how the use of this class allows to read the deafault resnet model, but changes the padding and stride, and skips the lineas and avgpool layers at the end
         checkpoint = torch.load(path, map_location=device, weights_only=True)
-        state_dict = checkpoint['net']
-        if next(iter(state_dict)).startswith("module."):
-            new_state_dict = OrderedDict()
-            for key, value in state_dict.items():
-                new_key = key.replace("module.", "")
-                new_state_dict[new_key] = value
-            state_dict = new_state_dict
-
-        teacher_feature_extractor.load_state_dict(state_dict)
+        
+        # check if state_dict contains 'net' key
+        if 'net' in checkpoint:
+            state_dict = checkpoint['net']
+            if next(iter(state_dict)).startswith("module."):
+                new_state_dict = OrderedDict()
+                for key, value in state_dict.items():
+                    new_key = key.replace("module.", "")
+                    new_state_dict[new_key] = value
+                state_dict = new_state_dict
+            teacher_feature_extractor.load_state_dict(state_dict)
+        else:
+            raw_sd = checkpoint['model']
+        
+            fixed_sd = {}
+            for k, v in raw_sd.items():
+                name = k
+                if name.startswith('module.'):
+                    name = name[len('module.'):]
+                if name.startswith('model.'):
+                    name = name[len('model.'):]
+                fixed_sd[name] = v
+            model_keys = set(teacher_feature_extractor.state_dict().keys())
+            state_dict = {k: v for k, v in fixed_sd.items() if k in model_keys}
+            teacher_feature_extractor.load_state_dict(state_dict)
+        
 
     elif dataset=='mnist':
         teacher_feature_extractor = DenseCIFARResNet18(BasicBlock, [2, 2, 2, 2], dim=1).to(device) # Note how the use of this class allows to read the deafault resnet model, but changes the padding and stride, and skips the lineas and avgpool layers at the end
