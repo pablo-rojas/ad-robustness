@@ -25,7 +25,7 @@ def main(config):
     epsilon = 0.1  # Epsilon for PGD attack
     num_steps = 20
     step_size = 2.5 * epsilon / num_steps  # Step size for PGD attack
-    robust_target = True  # True: robust resnet50, False: non-robust resnet50, None: non-robust resnet18
+    robust_target = False  # Set to True if you want to use a robust target model
     targeted = True  # Set to True if you want to use targeted attacks
     only_success = False  # Set to True if you want to only evaluate successful attacks
     detector_type = 'US'  # Detector type: 'US' for Uninformed Students, 'ACGAN' for ACGAN
@@ -185,6 +185,7 @@ def main(config):
         "Attack Success Rate"
     ]
     rows = []
+    rows_np = []
 
     rows.append([
         "Nat",
@@ -194,6 +195,15 @@ def main(config):
         "",
         ""
     ])
+    rows_np.append([
+        "Nat",
+        classifier_nat_acc,
+        (nat_as <= th10).sum() / len(nat_as) * 100,
+        (nat_as <= th1).sum() / len(nat_as) * 100,
+        "",
+        ""
+    ])
+
 
     for k in ks:
         as_k = adv_wb_as[k]
@@ -218,6 +228,15 @@ def main(config):
 
         # success_and = np.logical_and(succ_k[nat_accuracy], as_k[nat_accuracy] <= th10)
 
+        rows_np.append([
+            k,
+            acc_k.mean() * 100,
+            det10,
+            det1,
+            pAUC[k],
+            atk_succ_rate,
+        ])
+
         rows.append([
             f"{k}",
             f"{acc_k.mean() * 100:.1f}",
@@ -230,7 +249,7 @@ def main(config):
     print("\n\nResults across different k values for a PGD attack on " + ('robust' if robust_target else 'non-robust') + " target model and "   + detector_type + " detector:\n")
     print(tabulate(rows, headers=headers, floatfmt=".1f"))
 
-    return headers, rows
+    return headers, rows_np
 
 def initialize_target_model(config, robust_target, device):
     if robust_target:
@@ -280,7 +299,7 @@ if __name__ == "__main__":
         description="Evaluate PGDWhiteBox over multiple k values"
     )
     parser.add_argument(
-        '--config', type=str, default='cfg/cifar_benchmark.json',
+        '--config', type=str, default='cfg/imagenet_benchmark.json',
         help='Path to the configuration file.'
     )
     args = parser.parse_args()

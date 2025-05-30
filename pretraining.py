@@ -9,6 +9,7 @@ import torchvision.transforms as transforms
 
 from src.dataset_utils import get_dataset
 from src.model_utils import resnet18_classifier
+from src.wideresnet import WideResNet
 
 def train(model, train_loader, criterion, optimizer, trans, device):
     model.train()
@@ -54,7 +55,12 @@ def main(args):
     transform_train = transforms.Compose([norm])
     train_loader, test_loader = dataset.make_loaders(batch_size=args.batch_size, workers=args.workers, only_train=True)
 
-    model = resnet18_classifier(device, dataset.ds_name, pretrained=False)
+    #model = resnet18_classifier(device, dataset.ds_name, pretrained=False)
+    model = WideResNet(depth=94,
+                   num_classes=10,
+                   widen_factor=16,
+                   dropRate=0.3)
+    model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -73,6 +79,8 @@ def main(args):
         if test_acc >= best_acc:
             best_acc = test_acc
             best_model_wts = model.state_dict()
+            file_name = f'models/wideresnet18_{args.dataset}_best.pth'
+            torch.save(model.state_dict(), file_name)
         
         epoch_end_time = time.time()
         elapsed_time = epoch_end_time - start_time
@@ -97,19 +105,23 @@ def main(args):
         model.load_state_dict(best_model_wts)
         if not os.path.exists('models'):
             os.makedirs('models')
-        file_name = f'models/resnet18_{args.dataset}.pth'
+        #file_name = f'models/resnet18_{args.dataset}.pth'
+        file_name = f'models/wideresnet18_{args.dataset}.pth'
         torch.save(model.state_dict(), file_name)
         print(f'Best model saved to {file_name} with accuracy {best_acc:.4f}')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train ResNet18 on MNIST or CIFAR datasets')
     parser.add_argument('--dataset', type=str, default='cifar', help='Dataset to use: mnist or cifar')
-    parser.add_argument('--batch_size', type=int, default=256, help='Batch size for training')
-    parser.add_argument('--epochs', type=int, default=90, help='Number of epochs to train')
-    parser.add_argument('--lr', type=float, default=0.1, help='Learning rate')
+    parser.add_argument('--batch_size', type=int, default=128, help='Batch size for training')
+    parser.add_argument('--epochs', type=int, default=150, help='Number of epochs to train')
+    parser.add_argument('--lr', type=float, default=0.01, help='Learning rate')
     parser.add_argument('--workers', type=int, default=8, help='Number of data loading workers')
     parser.add_argument('--momentum', type=float, default=0.9, help='Momentum for SGD optimizer')
     parser.add_argument('--weight_decay', type=float, default=5e-4, help='Weight decay for SGD optimizer')
+   
 
+
+   
     args = parser.parse_args()
     main(args)

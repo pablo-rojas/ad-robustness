@@ -27,7 +27,7 @@ class PGD:
         labels = labels.to(self.device)
 
         best_loss = -float('inf')
-        best_adv_images = images.clone()
+        best_adv_images = images.clone().detach()
 
         # If random_start is True, start from a random point in the epsilon-ball
         if self.random_start:
@@ -45,6 +45,7 @@ class PGD:
             # zero any existing gradients
             if adv_images.grad is not None:
                 adv_images.grad.zero_()
+            self.model.zero_grad()
 
             # forward pass
             outputs = self.model(self.norm(adv_images)) # model expects normalized inputs
@@ -71,7 +72,7 @@ class PGD:
             # Check if the current adversarial image is better than the best one
             if loss.item() > best_loss:
                 best_loss = loss.item()
-                best_adv_images = adv_images.clone()
+                best_adv_images = adv_images.clone().detach()
 
         return best_adv_images
     

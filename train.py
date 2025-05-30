@@ -34,7 +34,7 @@ def train(config, device, norm, writer, train_loader, detector, val_loader=None)
             labels = labels.to(device)
 
             loss = detector.train_step(images, labels)
-            writer.add_scalar('Loss/train', loss.item(), i)
+            writer.add_scalar('Loss/train', loss, i)
 
             if val_interval is not None and i % val_interval == 0:
                 results = val(detector, val_loader, device, norm, n_samples=config['train']['test_samples'])
@@ -88,17 +88,18 @@ def val(detector, val_loader, device, norm, n_samples=100, epsilon=0.05):
         images = norm(images.to(device))
         labels = labels.to(device)
 
-        if isinstance(detector, UninformedStudents):
-            re, pu = detector.forward(images, labels)
-            e_list.append(re.detach().cpu().item())
-            u_list.append(pu.detach().cpu().item())
-        else:
-            anomaly_score = detector.forward(images).detach().cpu().item()
-            nat_as.append(anomaly_score)
+        with torch.no_grad():
+            if isinstance(detector, UninformedStudents):
+                re, pu = detector.forward(images, labels)
+                e_list.append(re.detach().cpu().item())
+                u_list.append(pu.detach().cpu().item())
+            else:
+                anomaly_score = detector.forward(images).detach().cpu().item()
+                nat_as.append(anomaly_score)
 
-        i += 1
-        if i >= n_samples:
-            break
+            i += 1
+            if i >= n_samples:
+                break
 
     if isinstance(detector, UninformedStudents):
         # Calculate the mean and standard deviation of e_list and u_list
@@ -123,17 +124,18 @@ def val(detector, val_loader, device, norm, n_samples=100, epsilon=0.05):
     for images, labels in val_loader:
         adv_images = fgsm.attack(images.to(device), labels)
 
-        if isinstance(detector, UninformedStudents):
-            re, pu = detector.forward(norm(adv_images).to(device)) # For conditional models I should pass the target model prediction
-            anomaly_score = (re - detector.e_mean) / detector.e_std + (pu - detector.v_mean) / detector.v_std
-            adv_as.append(anomaly_score.detach().cpu().item())
-        else:
-            anomaly_score = detector.forward(norm(adv_images).to(device))
-            adv_as.append(anomaly_score.cpu().item())
+        with torch.no_grad():
+            if isinstance(detector, UninformedStudents):
+                re, pu = detector.forward(norm(adv_images).to(device)) # For conditional models I should pass the target model prediction
+                anomaly_score = (re - detector.e_mean) / detector.e_std + (pu - detector.v_mean) / detector.v_std
+                adv_as.append(anomaly_score.detach().cpu().item())
+            else:
+                anomaly_score = detector.forward(norm(adv_images).to(device))
+                adv_as.append(anomaly_score.cpu().item())
 
-        i += 1
-        if i >= n_samples:
-            break
+            i += 1
+            if i >= n_samples:
+                break
 
     adv_as = np.array(adv_as)
     detected = np.sum(adv_as > threshold)
@@ -255,7 +257,7 @@ def main(config):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate the detector model.")
-    parser.add_argument('--config', type=str, default='cfg/imagenet_train_us.json', help='Path to the configuration file.')
+    parser.add_argument('--config', type=str, default='cfg/cifar_train_us_phard.json', help='Path to the configuration file.')
     args = parser.parse_args()
     config = load_config(args.config)
 

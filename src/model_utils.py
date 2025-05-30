@@ -5,6 +5,7 @@ from collections import OrderedDict
 try:
     # If this is imported as a module (from src)
     from src.architectures import *
+    from src.wideresnet import DenseWideResNet, WideResNet
 except ImportError:
     # If this is the main script
     from architectures import *
@@ -35,33 +36,44 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None, pretrained=
     """
 
     if dataset=='cifar':
-        model = ResNet18()
-        if pretrained and path is not None:
+        if 'wideresnet' in (path or '').lower():
+            model = WideResNet(depth=94,
+                   num_classes=10,
+                   widen_factor=16,
+                   dropRate=0.0)
             checkpoint = torch.load(path, map_location=device, weights_only=True)
+            model.load_state_dict(checkpoint)
+            
 
-        if 'net' in checkpoint:
-            state_dict = checkpoint['net']
-            if next(iter(state_dict)).startswith("module."):
-                new_state_dict = OrderedDict()
-                for key, value in state_dict.items():
-                    new_key = key.replace("module.", "")
-                    new_state_dict[new_key] = value
-                state_dict = new_state_dict
-            model.load_state_dict(state_dict)
         else:
-            raw_sd = checkpoint['model']
-        
-            fixed_sd = {}
-            for k, v in raw_sd.items():
-                name = k
-                if name.startswith('module.'):
-                    name = name[len('module.'):]
-                if name.startswith('model.'):
-                    name = name[len('model.'):]
-                fixed_sd[name] = v
-            model_keys = set(model.state_dict().keys())
-            state_dict = {k: v for k, v in fixed_sd.items() if k in model_keys}
-            model.load_state_dict(state_dict)
+
+            model = ResNet18()
+            if pretrained and path is not None:
+                checkpoint = torch.load(path, map_location=device, weights_only=True)
+
+            if 'net' in checkpoint:
+                state_dict = checkpoint['net']
+                if next(iter(state_dict)).startswith("module."):
+                    new_state_dict = OrderedDict()
+                    for key, value in state_dict.items():
+                        new_key = key.replace("module.", "")
+                        new_state_dict[new_key] = value
+                    state_dict = new_state_dict
+                model.load_state_dict(state_dict)
+            else:
+                raw_sd = checkpoint['model']
+            
+                fixed_sd = {}
+                for k, v in raw_sd.items():
+                    name = k
+                    if name.startswith('module.'):
+                        name = name[len('module.'):]
+                    if name.startswith('model.'):
+                        name = name[len('model.'):]
+                    fixed_sd[name] = v
+                model_keys = set(model.state_dict().keys())
+                state_dict = {k: v for k, v in fixed_sd.items() if k in model_keys}
+                model.load_state_dict(state_dict)
 
     elif dataset=='mnist':
         model = ResNet18(dim=1)
@@ -86,33 +98,43 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None, pretrained=
 def resnet18_feature_extractor(device='cpu', dataset='imagenet', path="models/resnet18_imagenet.pth", freeze=True):
     
     if dataset=='cifar':
-        teacher_feature_extractor = DenseCIFARResNet18(BasicBlock, [2, 2, 2, 2], dim=3).to(device) # Note how the use of this class allows to read the deafault resnet model, but changes the padding and stride, and skips the lineas and avgpool layers at the end
-        checkpoint = torch.load(path, map_location=device, weights_only=True)
-        
-        # check if state_dict contains 'net' key
-        if 'net' in checkpoint:
-            state_dict = checkpoint['net']
-            if next(iter(state_dict)).startswith("module."):
-                new_state_dict = OrderedDict()
-                for key, value in state_dict.items():
-                    new_key = key.replace("module.", "")
-                    new_state_dict[new_key] = value
-                state_dict = new_state_dict
-            teacher_feature_extractor.load_state_dict(state_dict)
+        if 'wideresnet' in (path or '').lower():
+            teacher_feature_extractor = DenseWideResNet(depth=94,
+                   num_classes=10,
+                   widen_factor=16,
+                   dropRate=0.0)
+            checkpoint = torch.load(path, map_location=device, weights_only=True)
+            teacher_feature_extractor.load_state_dict(checkpoint)
+            
+
         else:
-            raw_sd = checkpoint['model']
-        
-            fixed_sd = {}
-            for k, v in raw_sd.items():
-                name = k
-                if name.startswith('module.'):
-                    name = name[len('module.'):]
-                if name.startswith('model.'):
-                    name = name[len('model.'):]
-                fixed_sd[name] = v
-            model_keys = set(teacher_feature_extractor.state_dict().keys())
-            state_dict = {k: v for k, v in fixed_sd.items() if k in model_keys}
-            teacher_feature_extractor.load_state_dict(state_dict)
+            teacher_feature_extractor = DenseCIFARResNet18(BasicBlock, [2, 2, 2, 2], dim=3).to(device) # Note how the use of this class allows to read the deafault resnet model, but changes the padding and stride, and skips the lineas and avgpool layers at the end
+
+            checkpoint = torch.load(path, map_location=device, weights_only=True)
+            # check if state_dict contains 'net' key
+            if 'net' in checkpoint:
+                state_dict = checkpoint['net']
+                if next(iter(state_dict)).startswith("module."):
+                    new_state_dict = OrderedDict()
+                    for key, value in state_dict.items():
+                        new_key = key.replace("module.", "")
+                        new_state_dict[new_key] = value
+                    state_dict = new_state_dict
+                teacher_feature_extractor.load_state_dict(state_dict)
+            else:
+                raw_sd = checkpoint['model']
+            
+                fixed_sd = {}
+                for k, v in raw_sd.items():
+                    name = k
+                    if name.startswith('module.'):
+                        name = name[len('module.'):]
+                    if name.startswith('model.'):
+                        name = name[len('model.'):]
+                    fixed_sd[name] = v
+                model_keys = set(teacher_feature_extractor.state_dict().keys())
+                state_dict = {k: v for k, v in fixed_sd.items() if k in model_keys}
+                teacher_feature_extractor.load_state_dict(state_dict)
         
 
     elif dataset=='mnist':
@@ -187,6 +209,7 @@ def initialize_us_models(num_students, dataset, patch_size, device='cpu'):
     
     # Initialize teacher model with pretrained weights
     teacher = resnet18_feature_extractor(device, ds_name, model_paths[ds_name])
+    # teacher = resnet18_feature_extractor(device, ds_name, 'models/wideresnet18_cifar_best.pth')
 
     # Initialize student models with random weights using Patch17Descriptor
     students = []

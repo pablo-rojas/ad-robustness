@@ -153,6 +153,7 @@ def save_roc_curve(save_folder, nat_list, adv_list):
     # Ensure inputs are numpy arrays and combine scores
     anomaly_free_scores = np.array(nat_list)
     anomalous_scores = np.array(adv_list)
+    anomalous_scores[np.isinf(anomalous_scores)] = 100000
     y_scores = np.concatenate([anomaly_free_scores, anomalous_scores])
     y_true = np.concatenate([np.zeros(len(anomaly_free_scores)), np.ones(len(anomalous_scores))])
 
@@ -191,6 +192,8 @@ def partial_auc(anomaly_free_scores, anomalous_scores, fpr_threshold=0.2):
     # Ensure inputs are numpy arrays and combine scores
     anomaly_free_scores = np.array(anomaly_free_scores)
     anomalous_scores = np.array(anomalous_scores)
+    # Replace any infinite values with a large finite number
+    anomalous_scores[np.isinf(anomalous_scores)] = 100000
     y_scores = np.concatenate([anomaly_free_scores, anomalous_scores])
     y_true = np.concatenate([np.zeros(len(anomaly_free_scores)), np.ones(len(anomalous_scores))])
     

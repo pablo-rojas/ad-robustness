@@ -10,9 +10,9 @@ def get_marker(eval_name):
         return "o"
     if "fsgm" in eval_name:
         return "s"  # square
-    elif "pgd_inf" in eval_name:
+    elif "pgd_T_inf" in eval_name:
         return "^"  # triangle
-    elif "pgd_2" in eval_name:
+    elif "pgd_T_2" in eval_name:
         return "D"  # diamond
     elif "cw" in eval_name:
         return "v"  # inverted triangle

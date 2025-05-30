@@ -68,7 +68,30 @@ class Patch7Descriptor(nn.Module):
 class Patch17Descriptor(nn.Module):
     def __init__(self, dim=3, padding='same'):
         super(Patch17Descriptor, self).__init__()
+        '''
+        # Architecture for p = 17
+        self.conv1 = nn.Conv2d(in_channels=dim, out_channels=512, kernel_size=5, stride=1, padding=padding)
+        self.conv2 = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=5, stride=1, padding=padding)
+        self.conv3 = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=5, stride=1, padding=padding)
+        self.conv4 = nn.Conv2d(in_channels=512, out_channels=256, kernel_size=5, stride=1, padding=padding)
+        
+        self.decode = nn.Conv2d(in_channels=256, out_channels=512, kernel_size=1, stride=1, padding=padding)
+        
+        # Leaky ReLU with slope 5e-3
+        self.leaky_relu = nn.LeakyReLU(negative_slope=5e-3)
+        
+        # Architecture for p = 17
+        self.conv1 = nn.Conv2d(in_channels=dim, out_channels=256, kernel_size=5, stride=1, padding=padding)
+        self.conv2 = nn.Conv2d(in_channels=256, out_channels=512, kernel_size=5, stride=1, padding=padding)
+        self.conv3 = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=5, stride=1, padding=padding)
+        self.conv4 = nn.Conv2d(in_channels=512, out_channels=256, kernel_size=5, stride=1, padding=padding)
+        
+        self.decode = nn.Conv2d(in_channels=256, out_channels=512, kernel_size=1, stride=1, padding=padding)
+        
+        # Leaky ReLU with slope 5e-3
+        self.leaky_relu = nn.LeakyReLU(negative_slope=5e-3)
 
+        '''
         # Architecture for p = 17
         self.conv1 = nn.Conv2d(in_channels=dim, out_channels=128, kernel_size=5, stride=1, padding=padding)
         self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=5, stride=1, padding=padding)
@@ -79,6 +102,8 @@ class Patch17Descriptor(nn.Module):
         
         # Leaky ReLU with slope 5e-3
         self.leaky_relu = nn.LeakyReLU(negative_slope=5e-3)
+
+        
 
     def forward(self, x):
         x = self.leaky_relu(self.conv1(x))
@@ -146,7 +171,7 @@ class Patch65Descriptor(nn.Module):
         self.maxpool2 = MultiMaxPool2d(                                 kernel_size=2, stride=2)            # Output: (B, 128, 14, 14)
         self.conv3    = nn.Conv2d(in_channels=128, out_channels=128,    kernel_size=5, stride=1, padding=padding) # Output: (B, 128, 10, 10)
         self.maxpool3 = MultiMaxPool2d(                                 kernel_size=2, stride=2)            # Output: (B, 128, 5, 5)
-        self.conv4    = nn.Conv2d(in_channels=128, out_channels=256,    kernel_size=3, stride=1, padding=padding) # Output: (B, 256, 3, 3)
+        self.conv4    = nn.Conv2d(in_channels=128, out_channels=256,    kernel_size=4, stride=1, padding=padding) # Output: (B, 256, 3, 3)
         self.conv5    = nn.Conv2d(in_channels=256, out_channels=128,    kernel_size=3, stride=1, padding=padding) # Output: (B, 128, 1, 1) ?????
         self.decode   = nn.Conv2d(in_channels=128, out_channels=512,    kernel_size=1, stride=1, padding=padding)
         self.leaky_relu = nn.LeakyReLU(negative_slope=5e-3)
@@ -183,7 +208,7 @@ class Patch65Descriptor(nn.Module):
         #print(f"After conv4: {x.shape}")
         x = self.leaky_relu(self.conv5(x))
         #print(f"After conv5: {x.shape}")
-        x = self.decode(x)
+        
         #print(f"After decode: {x.shape}")
 
         # reshape back & unwarp
@@ -210,6 +235,8 @@ class Patch65Descriptor(nn.Module):
         x = unwarp_pool(x, s1)
         #print(f"After unwarp_pool: {x.shape}")
         _, C1, H1, W1 = x.shape
+
+        x = self.decode(x)
         return x
 
 class BasicBlock(nn.Module):

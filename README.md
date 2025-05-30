@@ -16,7 +16,7 @@ ACGAN forked from: github.com/wanghangpsu/acgan-ada/
 
 Install the necessary packages using:
 ```bash
-pip install torch torchvision tensorboard robustness opencv-python
+pip install torch torchvision tensorboard robustness opencv-python tabulate
 ```
 
 ## Compatibility Note

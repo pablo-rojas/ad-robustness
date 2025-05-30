@@ -1,8 +1,8 @@
 {
-    "experiment_name": "benchmark_cifar2",
+    "experiment_name": "benchmark_cifar",
     "target_model_path": "models/resnet18_cifar.pth",
     "acgan_path": "models/resgan90",
-    "uninformed_students_path": "models/cifar_us_best",
+    "uninformed_students_path": "models/cifar_us_0_best",
     "dataset": "cifar",
     "patch_size": 17,
     "num_students": 10,
@@ -10,29 +10,109 @@
         "attack_list": [
             {
                 "type": "fgsm",
-                "epsilon": 0.05,
+                "epsilon": 0.0157,
+                "constraint": "inf",
+                "targeted": 1
+            },
+            {
+                "type": "fgsm",
+                "epsilon": 0.0314,
+                "constraint": "inf",
+                "targeted": 1
+            },
+            {
+                "type": "fgsm",
+                "epsilon": 0.0627,
+                "constraint": "inf",
+                "targeted": 1
+            },
+            {
+                "type": "fgsm",
+                "epsilon": 0.1255,
+                "constraint": "inf",
+                "targeted": 1
+            },
+            {
+                "type": "fgsm",
+                "epsilon": 0.2510,
                 "constraint": "inf",
                 "targeted": 1
             },
             {
                 "type": "pgd",
-                "epsilon": 0.1,
+                "epsilon": 0.0157,
                 "constraint": "inf",
                 "targeted": true,
-                "iterations": 100,
+                "iterations": 20,
                 "step_size":  0.01
             },
             {
                 "type": "pgd",
-                "epsilon": 0.3,
+                "epsilon": 0.0314,
                 "constraint": "inf",
                 "targeted": true,
-                "iterations": 100,
-                "step_size": 0.01
-            }          
+                "iterations": 20,
+                "step_size":  0.01
+            },
+            {
+                "type": "pgd",
+                "epsilon": 0.0627,
+                "constraint": "inf",
+                "targeted": true,
+                "iterations": 20,
+                "step_size":  0.01
+            },
+            {
+                "type": "pgd",
+                "epsilon": 0.1255,
+                "constraint": "inf",
+                "targeted": true,
+                "iterations": 20,
+                "step_size":  0.01
+            },
+            {
+                "type": "pgd",
+                "epsilon": 0.2510,
+                "constraint": "inf",
+                "targeted": true,
+                "iterations": 20,
+                "step_size":  0.01
+            },
+            {
+                "type": "pgd",
+                "epsilon": 0.25,
+                "constraint": "2",
+                "targeted": true,
+                "iterations": 20,
+                "step_size":  0.01
+            },
+            {
+                "type": "pgd",
+                "epsilon": 0.5,
+                "constraint": "2",
+                "targeted": true,
+                "iterations": 20,
+                "step_size":  0.01
+            },
+            {
+                "type": "pgd",
+                "epsilon": 1.0,
+                "constraint": "2",
+                "targeted": true,
+                "iterations": 20,
+                "step_size":  0.01
+            },
+            {
+                "type": "pgd",
+                "epsilon": 2.0,
+                "constraint": "2",
+                "targeted": true,
+                "iterations": 20,
+                "step_size":  0.01
+            }
         ],
         "ensure_succesful_attack": true,
-        "samples": 500,
+        "samples": 100,
         "save": false
     }
 }

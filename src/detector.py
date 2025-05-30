@@ -53,7 +53,9 @@ class UninformedStudents(nn.Module):
                 betas=(config["train"]["beta1"], config["train"]["beta2"]),
                 eps=config["train"]["eps"]
             )
-            self.phard = config["train"].get("phard", 0.0)
+            self.phard          = config["train"].get("phard", 0.0)
+            self.batch_size     = config["train"]["batch_size"]
+            self.subdivisions   = config["train"]["batch_subdivisions"]
         
         self.to(device)
     
@@ -141,46 +143,68 @@ class UninformedStudents(nn.Module):
         Returns:
             torch.Tensor: The total loss.
         """
-        t = self.teacher(x).detach()
 
-        # Normalize the teacher outputs if needed
-        t_norm = (t - self.teacher_mean[None, ..., None, None]) \
-                 / self.teacher_std[ None, ..., None, None]
-
-        # Preallocate tensor for student outputs.
-        s = torch.empty((len(self.students),) + t.shape, 
-                                        device=x.device, dtype=t.dtype)
+        B = x.size(0)
+        S = self.subdivisions
+        assert B >= S, "Batch size must be >= subdivisions"
         
-        # Fill the preallocated tensor with each student's output
-        for i, student in enumerate(self.students):
-            s[i] = student(x).squeeze()
-
-        t_exp = t_norm.unsqueeze(0).expand_as(s)
-
-        if self.phard > 0:
-            # Hard feature mining
-            # D = (s - t)^2
-            D = (s - t_exp).pow(2)                              # (M, B, C, W, H)
-            M, B, C, W, H = D.shape
-            # flatten per sample
-            D_flat = D.view(M*B, C*W*H)                        # (M*B, C*W*H)
-            # compute phard quantile per row
-            thresh = D_flat.quantile(self.phard, dim=1, keepdim=True)  # (M*B,1)
-            mask = D_flat >= thresh                             # (M*B, C*W*H)
-            # count hard examples, avoid div0
-            counts = mask.sum(dim=1).clamp(min=1).float()       # (M*B,)
-            # sum only hard diffs
-            loss_per = (D_flat * mask).sum(dim=1) / counts      # (M*B,)
-            loss = loss_per.mean()
-        else:
-            # Plain MSE
-            loss = F.mse_loss(s, t_exp)
-
+        # zero grads once
         self.optimizer.zero_grad()
-        loss.backward()
+
+        total_loss = 0.0
+        # size of each chunk (last chunk may be larger if B % S != 0)
+        for i in range(S):
+            start = i * (B // S)
+            end   = (i + 1) * (B // S) if i < S - 1 else B
+            x_sub = x[start:end]
+
+            t = self.teacher(x_sub).detach()
+
+            # Normalize the teacher outputs if needed
+            t_norm = (t - self.teacher_mean[None, ..., None, None]) \
+                        / self.teacher_std[ None, ..., None, None]
+
+            # Preallocate tensor for student outputs.
+            s = torch.empty((len(self.students),) + t.shape, 
+                                            device=x.device, dtype=t.dtype)
+            
+            # Fill the preallocated tensor with each student's output
+            for i, student in enumerate(self.students):
+                s[i] = student(x_sub).squeeze()
+
+            t_exp = t_norm.unsqueeze(0).expand_as(s)
+
+            if self.phard > 0:
+                # Hard feature mining
+                # D = (s - t)^2
+                D = (s - t_exp).pow(2)                              # (M, B, C, W, H)
+                M, B2, C, W, H = D.shape
+                # flatten per sample
+                D_flat = D.view(M*B2, C*W*H)                         # (M*B, C*W*H)
+                N = D_flat.size(1)                                  # N = C*W*H
+                # compute the ϕ-quantile rank (1-indexed):
+                k = int(self.phard * N)
+                k = min(max(k, 1), N)
+                # kthvalue returns the k-th smallest element
+                thresh, _ = D_flat.kthvalue(k, dim=1, keepdim=True)
+                mask = D_flat >= thresh                             # (M*B, C*W*H)
+                # count hard examples, avoid div0
+                counts = mask.sum(dim=1).clamp(min=1).float()       # (M*B,)
+                # sum only hard diffs
+                loss_per = (D_flat * mask).sum(dim=1) / counts      # (M*B,)
+                loss = loss_per.mean()
+            else:
+                # Plain MSE
+                loss = F.mse_loss(s, t_exp)
+
+            # scale the gradient contribution
+            loss = loss / S
+            loss.backward()
+            total_loss += loss.item()
+
         self.optimizer.step()
 
-        return loss
+        return total_loss
 
     def train(self, mode=True):
         """

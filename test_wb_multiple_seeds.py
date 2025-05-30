@@ -21,21 +21,33 @@ def aggregate_seeds(config_path, num_seeds):
 
         for row in rows:
             k = row[0]
-            metrics = [float(x) for x in row[1:]]
+            metrics = []
+            for x in row[1:]:
+                try:
+                    metrics.append(float(x))
+                except ValueError:
+                    metrics.append(x)
             all_results.setdefault(k, []).append(metrics)
 
-    aggregated = []
-    for k, seed_lists in all_results.items():
-        arr = np.array(seed_lists)               # shape (num_seeds, num_metrics)
-        means = arr.mean(axis=0)
-        stds  = arr.std(axis=0)
-        formatted = []
-        for idx, (m, s) in enumerate(zip(means, stds)):
-            if headers[1 + idx].lower().startswith("pauc"):  # pAUC-0.2 column
-                formatted.append(f"{m:.4f}±{s:.6f}")
-            else:
-                formatted.append(f"{m:.1f}±{s:.2f}")
-        aggregated.append([k] + formatted)
+        aggregated = []
+        for k, seed_lists in all_results.items():
+            n_metrics = len(seed_lists[0])
+            formatted_row = [k]
+            for idx in range(n_metrics):
+                col_vals = [seed[idx] for seed in seed_lists]
+                # numeric column?
+                if all(isinstance(v, (int, float)) for v in col_vals):
+                    arr = np.array(col_vals, dtype=float)
+                    m, s = arr.mean(), arr.std()
+                    hdr = headers[1 + idx].lower()
+                    if hdr.startswith("pauc"):
+                        formatted_row.append(f"{m:.5f}±{s:.6f}")
+                    else:
+                        formatted_row.append(f"{m:.2f}±{s:.3f}")
+                else:
+                    # non‐numeric: leave as is (take first)
+                    formatted_row.append(col_vals[0])
+            aggregated.append(formatted_row)
 
     return headers, aggregated
 
@@ -57,11 +69,11 @@ def main():
     
 
     print("\nAggregated Results (mean ± std over seeds):\n")
-    table_str = tabulate(aggregated_rows, headers=headers, tablefmt='github')
+    table_str = tabulate(aggregated_rows, headers=headers, tablefmt='latex_raw', stralign='center')
     print(table_str)
 
     cfg_base = os.path.splitext(args.config)[0]
-    out_fname = f"results{cfg_base}.txt"
+    out_fname = f"results{cfg_base[3:]}.txt"
     with open(out_fname, 'w') as f:
         f.write(table_str + "\n")
     print(f"\nSaved aggregated results to {out_fname}")
