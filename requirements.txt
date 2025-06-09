@@ -5,7 +5,7 @@ Pillow
 robustness
 scikit_learn
 scipy
-skimage
+scikit-image
 tabulate
 torch==2.5.0
 torchvision==0.20.0
