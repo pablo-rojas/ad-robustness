@@ -1,6 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision.models.resnet import (
+    ResNet   as TorchResNet,
+    BasicBlock as TorchBasicBlock,
+    ResNet18_Weights
+)
 
 
 def unwarp_pool(x, s):
@@ -296,6 +301,95 @@ class Bottleneck(nn.Module):
         out = F.relu(out)
         return out
 
+
+
+class ResNet18ImageNet(TorchResNet):
+    def __init__(
+        self,
+        weights: ResNet18_Weights = ResNet18_Weights.DEFAULT,
+        progress: bool = True,
+        **kwargs  # e.g. num_classes=1000, zero_init_residual=False, etc.
+    ):
+        """
+        ResNet-18 backbone with ImageNet-pretrained weights + auxiliary feature methods.
+        """
+        # 1) Construct the *architecture* exactly as torchvision's resnet18():
+        super().__init__(
+            block=TorchBasicBlock,
+            layers=[2, 2, 2, 2],
+            **kwargs
+        )
+
+        # 2) Load the pretrained weights if requested
+        if weights is not None:
+            # verify and download
+            weights = ResNet18_Weights.verify(weights)
+            sd = weights.get_state_dict(progress=progress)
+            self.load_state_dict(sd)
+
+    def extract_features(self, x: torch.Tensor):
+        feats = []
+        # conv1 → bn1 → relu
+        out = self.conv1(x); out = self.bn1(out); out = self.relu(out)
+        feats.append(out)
+        # maxpool
+        out = self.maxpool(out)
+        # every residual block
+        for layer in (self.layer1, self.layer2, self.layer3, self.layer4):
+            for block in layer:
+                out = block(out)
+                feats.append(out)
+        # pooled vector
+        pooled = F.adaptive_avg_pool2d(out, (1, 1))
+        pooled = torch.flatten(pooled, 1)
+        feats.append(pooled)
+        return feats
+
+    def feature_list(self, x: torch.Tensor):
+        out_list = []
+        out = self.conv1(x); out = self.bn1(out); out = self.relu(out)
+        out = self.maxpool(out)
+        out_list.append(out)
+
+        out = self.layer1(out); out_list.append(out)
+        out = self.layer2(out); out_list.append(out)
+        out = self.layer3(out); out_list.append(out)
+        out = self.layer4(out); out_list.append(out)
+
+        out = self.avgpool(out)
+        out = torch.flatten(out, 1)
+        logits = self.fc(out)
+        return logits, out_list
+
+    def intermediate_forward(self, x: torch.Tensor, layer_index: int):
+        # 0 = just after pool, 1–4 = after layer1–4
+        out = self.conv1(x); out = self.bn1(out); out = self.relu(out)
+        out = self.maxpool(out)
+        if layer_index == 0:
+            return out
+        for idx, layer in enumerate(
+            (self.layer1, self.layer2, self.layer3, self.layer4), start=1
+        ):
+            out = layer(out)
+            if idx == layer_index:
+                return out
+        raise ValueError(f"layer_index must be in 0–4, got {layer_index}")
+
+    def penultimate_forward(self, x: torch.Tensor):
+        out = self.conv1(x); out = self.bn1(out); out = self.relu(out)
+        out = self.maxpool(out)
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        penult = self.layer4(out)
+        pooled = self.avgpool(penult)
+        pooled = torch.flatten(pooled, 1)
+        logits = self.fc(pooled)
+        return logits, penult
+
+    # forward() is inherited unchanged from ResNet
+
+# ResNet class for CIFAR-10 and MNIST
 class ResNet(nn.Module):
     def __init__(self, block, num_blocks, num_classes=10, dim=3):
         super(ResNet, self).__init__()

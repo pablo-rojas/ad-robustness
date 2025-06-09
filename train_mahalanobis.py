@@ -104,8 +104,8 @@ def main(config, type='mahalanobis', read_from_file=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate the detector model.")
-    parser.add_argument('--config', type=str, default='cfg/mnist_train_us.json', help='Path to the configuration file.')
-    parser.add_argument('--type', type=str, default='lid', help='Type of detector to use. Options: mahalanobis, lid')
+    parser.add_argument('--config', type=str, default='cfg/imagenet_train_us.json', help='Path to the configuration file.')
+    parser.add_argument('--type', type=str, default='mahalanobis', help='Type of detector to use. Options: mahalanobis, lid')
     args = parser.parse_args()
     config = load_config(args.config)
 

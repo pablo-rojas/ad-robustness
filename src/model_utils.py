@@ -83,7 +83,7 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None, pretrained=
 
     elif dataset=='imagenet':
         if pretrained:
-            model = models.resnet18(weights='IMAGENET1K_V1')
+            model = ResNet18ImageNet()
         else:
             model = models.resnet18()
 
