@@ -1,11 +1,23 @@
 {
     "experiment_name": "benchmark_cifar",
     "target_model_path": "models/resnet18_cifar.pth",
-    "acgan_path": "models/resgan90",
-    "uninformed_students_path": "models/cifar_us_0_best",
+    "detectors": [
+        {
+            "type": "acgan",
+            "path": "models/resgan90"
+        },
+        {
+            "type": "uninformed_students",
+            "path": "models/cifar_us_0_best",
+            "patch_size": 17,
+            "num_students": 10
+        },
+        {
+            "type": "mahalanobis",
+            "path": "models/mahalanobis_detector_cifar"
+        }
+    ],
     "dataset": "cifar",
-    "patch_size": 17,
-    "num_students": 10,
     "test": {
         "attack_list": [
             {
@@ -111,7 +123,7 @@
                 "step_size":  0.01
             }
         ],
-        "ensure_succesful_attack": true,
+        "ensure_succesful_attack": false,
         "samples": 100,
         "save": false
     }

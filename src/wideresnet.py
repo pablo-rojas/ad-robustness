@@ -120,13 +120,14 @@ class DenseWideResNet(nn.Module):
         out = self.relu(self.bn1(out))
         return out
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = DenseWideResNet(depth=94,
-                   num_classes=10,
-                   widen_factor=16,
-                   dropRate=0.3)
-model = model.to(device)
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = DenseWideResNet(depth=94,
+                    num_classes=10,
+                    widen_factor=16,
+                    dropRate=0.3)
+    model = model.to(device)
 
-x = torch.randn(1, 3, 32, 32).to(device)
-y = model(x)
-print(y.shape)  # Should be [1, 10] for CIFAR-10
+    x = torch.randn(1, 3, 32, 32).to(device)
+    y = model(x)
+    print(y.shape)  # Should be [1, 10] for CIFAR-10

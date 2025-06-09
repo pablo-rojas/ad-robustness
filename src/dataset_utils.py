@@ -75,7 +75,7 @@ class BaseDataset(Dataset):
         return (train_loader, val_loader, test_loader) if val_loader else (train_loader, test_loader)
     
 class MNISTDataset(BaseDataset):
-    def __init__(self, data_path='./data/mnist', seed=42, random_crop_size=None):
+    def __init__(self, data_path='./data/mnist', seed=42, random_crop_size=None, normalize=False):
         # Set dataset name and normalization parameters
         self.ds_name = 'mnist'
         self.mean = torch.tensor([0.5])
@@ -92,6 +92,8 @@ class MNISTDataset(BaseDataset):
         else:
             transform_list = [transforms.ToTensor()]
 
+        if normalize:
+            transform_list.append(self.normalize)
         transform = transforms.Compose(transform_list)
 
         # Set seed for reproducibility
@@ -113,7 +115,7 @@ class MNISTDataset(BaseDataset):
             mnist_train, [train_size, val_size], generator=generator)
         
 class CIFARDataset(BaseDataset):
-    def __init__(self, data_path='./data/cifar10', seed=42, random_crop_size=None):
+    def __init__(self, data_path='./data/cifar10', seed=42, random_crop_size=None, normalize=False):
         # Set dataset name and normalization parameters needed for adv attacks
         self.ds_name = 'cifar'
         self.mean = torch.tensor([0.4914, 0.4822, 0.4465])
@@ -131,6 +133,8 @@ class CIFARDataset(BaseDataset):
         else:
             transform_list = [transforms.ToTensor()]
 
+        if normalize:
+            transform_list.append(self.normalize)
         transform = transforms.Compose(transform_list)
 
         # Set seed for reproducibility
@@ -153,7 +157,7 @@ class CIFARDataset(BaseDataset):
         
 
 class ImageNetDataset(BaseDataset):
-    def __init__(self, data_path='./data/ImageNet', random_crop_size=None):
+    def __init__(self, data_path='./data/ImageNet', random_crop_size=None, normalize=False):
         # Set dataset name and normalization parameters needed for adv attacks
         self.ds_name = 'imagenet'
         self.mean = torch.tensor([0.485, 0.456, 0.406])
@@ -173,7 +177,8 @@ class ImageNetDataset(BaseDataset):
                 transforms.Resize((224, 224)),
                 transforms.ToTensor()
             ]
-
+        if normalize:
+            transform_list.append(self.normalize)
         transform = transforms.Compose(transform_list)
 
         # Load ImageNet dataset using torchvision
@@ -184,13 +189,13 @@ class ImageNetDataset(BaseDataset):
         self.test_data = datasets.ImageFolder(root=f"{data_path}/val", 
                                              transform=transform)
 
-def get_dataset(dataset_name, random_crop_size=None):
+def get_dataset(dataset_name, random_crop_size=None, normalize=False):
     if dataset_name == 'mnist':
-        return MNISTDataset(random_crop_size=random_crop_size)
+        return MNISTDataset(random_crop_size=random_crop_size, normalize=normalize)
     elif dataset_name == 'cifar':
-        return CIFARDataset(random_crop_size=random_crop_size)
+        return CIFARDataset(random_crop_size=random_crop_size, normalize=normalize)
     elif dataset_name == 'imagenet':
-        return ImageNetDataset(random_crop_size=random_crop_size)
+        return ImageNetDataset(random_crop_size=random_crop_size, normalize=normalize)
     else:
         raise ValueError(f'Invalid dataset: {dataset_name}')
     

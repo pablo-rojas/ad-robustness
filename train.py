@@ -90,7 +90,7 @@ def val(detector, val_loader, device, norm, n_samples=100, epsilon=0.05):
 
         with torch.no_grad():
             if isinstance(detector, UninformedStudents):
-                re, pu = detector.forward(images, labels)
+                re, pu = detector(images, labels, return_as=False)
                 e_list.append(re.detach().cpu().item())
                 u_list.append(pu.detach().cpu().item())
             else:
@@ -126,7 +126,7 @@ def val(detector, val_loader, device, norm, n_samples=100, epsilon=0.05):
 
         with torch.no_grad():
             if isinstance(detector, UninformedStudents):
-                re, pu = detector.forward(norm(adv_images).to(device)) # For conditional models I should pass the target model prediction
+                re, pu = detector(norm(adv_images).to(device), return_as=False) # For conditional models I should pass the target model prediction
                 anomaly_score = (re - detector.e_mean) / detector.e_std + (pu - detector.v_mean) / detector.v_std
                 adv_as.append(anomaly_score.detach().cpu().item())
             else:

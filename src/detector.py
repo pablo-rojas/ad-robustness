@@ -231,7 +231,7 @@ class UninformedStudents(nn.Module):
             student.decode = torch.nn.Identity()
         self.teacher.decode = torch.nn.Identity()  
 
-    def forward(self, x, label=None):
+    def forward(self, x, label=None, return_as=True):
         """
         Forward pass of the detector model.
 
@@ -259,7 +259,10 @@ class UninformedStudents(nn.Module):
         
         predictive_uncertainty = s.var(dim=0).mean()
         
-        return regression_error, predictive_uncertainty
+        if return_as:
+            return (regression_error - self.e_mean) / self.e_std + (predictive_uncertainty - self.v_mean) / self.v_std
+        else:
+            return regression_error, predictive_uncertainty
 
 class PetrainedDescriptor(UninformedStudents):
     """

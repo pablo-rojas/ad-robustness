@@ -10,7 +10,8 @@ from robustness.cifar_models import resnet50, resnet18
 
 # Import dataset and evaluation utilities.
 from src.dataset_utils import get_dataset
-from src.detector import UninformedStudents
+from src.detector import *
+from mahalanobis.detector import MahalanobisDetector
 from src.model_utils import resnet18_classifier
 from src.eval_utils import *
 from src.misc_utils import load_config
@@ -28,14 +29,16 @@ def main(config):
     robust_target = False  # Set to True if you want to use a robust target model
     targeted = True  # Set to True if you want to use targeted attacks
     only_success = False  # Set to True if you want to only evaluate successful attacks
-    detector_type = 'US'  # Detector type: 'US' for Uninformed Students, 'ACGAN' for ACGAN
+    detector_type = 'Mahalanobis'  # Detector type: 'US' for Uninformed Students, 'ACGAN' for ACGAN
     normalize_grad = False # Set to True if you want to normalize the gradients during the attack
 
     # List of k values to sweep
-    #ks = [0.0, 1.0, 100.0, 10000.0]
-    ks = [0.0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0]
+    # ks = [0.0, 1.0, 100.0, 10000.0]
+    ks = [0.0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]
     # ks = [0.0]
-    # ks =[1000.0]
+    # ks = [1000.0]
+    # ks = [0.0, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0]
+    # ks = [0.0, 0.01, 0.1, 1.0, 5.0, 10.0, 20.0, 50.0, 100.0]
 
     # Use GPU for the classification network and PGD attacker.
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -52,6 +55,8 @@ def main(config):
     target_model.to(device)
 
     target_model = initialize_target_model(config, robust_target, device)
+
+    num_classes = 1000 if config['dataset'] == 'imagenet' else 10
 
     # Initialize Uninformed Students detector
     if detector_type == 'US':
@@ -82,8 +87,7 @@ def main(config):
         detector.generator.eval()
         detector.discriminator.eval()
 
-
-        # Pre-create PGDWhiteBox attackers for each k
+                # Pre-create PGDWhiteBox attackers for each k
         pgd_wb_attackers = {
             k: PGDacgan(
                 model=target_model,
@@ -99,6 +103,29 @@ def main(config):
             )
             for k in ks
         }
+
+    elif detector_type == 'Mahalanobis':
+        detector = MahalanobisDetector(target_model, num_classes=num_classes, device='cuda', net_type='resnet', dataset=dataset)
+        detector_path = f"models/mahalanobis_detector_{config['dataset']}"
+        detector.load(detector_path)
+
+        # Pre-create PGDWhiteBox attackers for each k
+        pgd_wb_attackers = {
+            k: PGDmahalanobis(
+                model=target_model,
+                norm=norm,
+                device=device,
+                detector=detector,
+                k=k,
+                epsilon=epsilon,
+                step_size=step_size,
+                num_iter=num_steps,
+                targeted=targeted,
+                norm_grad=normalize_grad,
+            )
+            for k in ks
+        }
+
     else:
         raise ValueError("Invalid detector type. Choose 'US' or 'ACGAN'.")
 
@@ -126,11 +153,11 @@ def main(config):
                 continue
 
             nat_accuracy.append((logits.argmax(1) == labels).item())
-            if detector_type == 'US':
-                re_nat, pu_nat = detector.forward(norm(images.to(device)))
-                AS_nat = (re_nat - detector.e_mean) / detector.e_std + (pu_nat - detector.v_mean) / detector.v_std
-            elif detector_type == 'ACGAN':
+            if detector_type == 'ACGAN':
                 AS_nat = sd_statistic(detector.discriminator(images.to(device)), logits.argmax(1))
+            else:
+                with torch.enable_grad():
+                    AS_nat = detector(norm(images.to(device))).detach().cpu()
             nat_as.append(AS_nat.item())
 
         # Get target labels for the attack
@@ -143,11 +170,11 @@ def main(config):
                 logits_adv = target_model(norm(adv_images).to(device)).detach().cpu()
                 adv_wb_accuracy[k].append((logits_adv.argmax(1) == labels).item())
 
-                if detector_type == 'US':
-                    re_adv, pu_adv = detector.forward(norm(adv_images.to(device)))
-                    AS_adv = (re_adv - detector.e_mean) / detector.e_std + (pu_adv - detector.v_mean) / detector.v_std
-                elif detector_type == 'ACGAN':
+                if detector_type == 'ACGAN':
                     AS_adv = sd_statistic(detector.discriminator(adv_images.to(device)), logits_adv.argmax(1))
+                else:
+                    with torch.enable_grad():
+                        AS_adv = detector(norm(adv_images.to(device))).detach().cpu()
 
                 adv_wb_as[k].append(AS_adv.item())
                 if targeted:
@@ -203,7 +230,6 @@ def main(config):
         "",
         ""
     ])
-
 
     for k in ks:
         as_k = adv_wb_as[k]
@@ -272,21 +298,6 @@ def initialize_target_model(config, robust_target, device):
         target_model.load_state_dict(state_dict)
     else:
         target_model = resnet18_classifier(device, config['dataset'], config['target_model_path'])
-
-        # ckpt = torch.load('models/cifar_nat.pt', map_location=device)
-        # raw_sd = ckpt['model']
-        
-        # fixed_sd = {}
-        # for k, v in raw_sd.items():
-        #     name = k
-        #     if name.startswith('module.'):
-        #         name = name[len('module.'):]
-        #     if name.startswith('model.'):
-        #         name = name[len('model.'):]
-        #     fixed_sd[name] = v
-        # model_keys = set(target_model.state_dict().keys())
-        # state_dict = {k: v for k, v in fixed_sd.items() if k in model_keys}
-        # target_model.load_state_dict(state_dict)
     
     
     target_model.eval()
@@ -299,7 +310,7 @@ if __name__ == "__main__":
         description="Evaluate PGDWhiteBox over multiple k values"
     )
     parser.add_argument(
-        '--config', type=str, default='cfg/imagenet_benchmark.json',
+        '--config', type=str, default='cfg/mnist_benchmark.json',
         help='Path to the configuration file.'
     )
     args = parser.parse_args()
