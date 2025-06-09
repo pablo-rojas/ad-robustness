@@ -273,7 +273,8 @@ class MahalanobisDetector(nn.Module):
             proba = torch.softmax(logits, dim=1)[:, 1]  # “positive” = class-1
         return proba
 
-
+# First iteration of the LIDDetector class, not working yet
+# It is a work in progress and does NOT function as intended.
 class LIDDetector(nn.Module):
     def __init__(self, model, device="cuda", k=20, input_shape=(3,32,32)):
         """
