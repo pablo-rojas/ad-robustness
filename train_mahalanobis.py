@@ -65,31 +65,31 @@ def main(config, type='mahalanobis', read_from_file=False):
     np.random.seed(seed)
     torch.backends.cudnn.deterministic = True
     detector_path = f"models/mahalanobis_detector_{config['dataset']}"
+    batch_size = 100 if type == 'lid' else 1
 
     # Get the dataset and create data loaders
     dataset = get_dataset(config['dataset'], normalize=True)
-    train_loader, _, _ = dataset.make_loaders(batch_size=1, workers=4, seed=seed)
+    train_loader, _, _ = dataset.make_loaders(batch_size=batch_size, workers=4, seed=seed)
     _, val_loader, test_loader = get_dataset(config['dataset']).make_loaders(batch_size=1, workers=4, seed=seed)
     test_loader.dataset.ds_name = config['dataset']
     norm = dataset.normalize
-    num_classes = 1000 if config['dataset'] == 'imagenet' else 10
+    
 
     target_model = resnet18_classifier(device, dataset.ds_name, path=model_paths[dataset.ds_name])
 
     # Then call the function to initialize the detector
     if type == 'lid':
-        detector = LIDDetector(target_model, num_classes=num_classes, device='cuda', net_type='resnet', dataset=dataset)
+        detector = LIDDetector(target_model, dataset=dataset, device=device)
     elif type == 'mahalanobis':
-        detector = MahalanobisDetector(target_model, num_classes=num_classes, device='cuda', net_type='resnet', dataset=dataset)
+        detector = MahalanobisDetector(target_model, device=device, net_type='resnet', dataset=dataset)
     else:
         raise ValueError(f"Unknown detector type: {type}")
 
     if not read_from_file:
         detector.fit(train_loader)
 
-        if type == 'mahalanobis':
-            fgsm = FGSM(model=target_model, norm=norm, epsilon=0.05, targeted=-1)
-            detector.train_regressor(val_loader, norm, fgsm)
+        fgsm = FGSM(model=target_model, norm=norm, epsilon=0.05, targeted=-1)
+        detector.train_regressor(val_loader, norm, fgsm)
 
         # Save the trained detector
         detector.save(detector_path)
@@ -105,7 +105,7 @@ def main(config, type='mahalanobis', read_from_file=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate the detector model.")
     parser.add_argument('--config', type=str, default='cfg/imagenet_train_us.json', help='Path to the configuration file.')
-    parser.add_argument('--type', type=str, default='mahalanobis', help='Type of detector to use. Options: mahalanobis, lid')
+    parser.add_argument('--type', type=str, default='lid', help='Type of detector to use. Options: mahalanobis, lid')
     args = parser.parse_args()
     config = load_config(args.config)
 

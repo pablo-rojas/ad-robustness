@@ -1,18 +1,19 @@
+import os
+import pickle
+import numpy as np
+from typing import List, Optional
+from sklearn.neighbors import NearestNeighbors
+from sklearn.linear_model import LogisticRegressionCV
+
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+
 import mahalanobis.lib_generation as lg
 
-from sklearn.neighbors import NearestNeighbors
-from sklearn.linear_model import LogisticRegressionCV
-import numpy as np
-import os
-import pickle
-import os
-import pickle
 
 class MahalanobisDetector(nn.Module):
-    def __init__(self, model, num_classes, device="cuda", net_type="resnet", dataset='cifar'):
+    def __init__(self, model, device="cuda", net_type="resnet", dataset='cifar'):
         """
         model      : a PyTorch model implementing .feature_list() and .intermediate_forward()
         num_classes: number of in‐distribution classes
@@ -22,7 +23,7 @@ class MahalanobisDetector(nn.Module):
         super(MahalanobisDetector, self).__init__()
         self.device      = device
         self.model       = model.to(device)
-        self.num_classes = num_classes
+        self.num_classes = 1000 if dataset.ds_name == 'imagenet' else 10
         self.net_type    = net_type
         self.dataset_mean = dataset.mean
         self.dataset_std = dataset.std
@@ -276,90 +277,136 @@ class MahalanobisDetector(nn.Module):
 # First iteration of the LIDDetector class, not working yet
 # It is a work in progress and does NOT function as intended.
 class LIDDetector(nn.Module):
-    def __init__(self, model, device="cuda", k=20, input_shape=(3,32,32)):
-        """
-        model       : a PyTorch model implementing .feature_list()
-        device      : "cuda" or "cpu"
-        k           : number of neighbors for LID estimation
-        input_shape : tuple (C,H,W) for creating a dummy input
-        """
-        super(LIDDetector, self).__init__()
-        self.device = device
-        self.model = model.to(device)
-        self.k = k
 
-        # figure out how many feature‐layers we have
-        self.model.eval()
+    def __init__(
+            self,
+            model: nn.Module,
+            dataset,
+            device: str = "cuda",
+            k: int = 20,                  # #nearest-neighbours for LID
+            max_ref_per_layer: int = 2000   # cap to keep RAM in check
+    ):
+        super().__init__()
+        self.device = device
+        self.model  = model.to(device).eval()
+        self.k      = k
+        self.max_ref_per_layer = max_ref_per_layer   # RAM safety
+
+        # discover how many “feature layers” exist and their dims
         with torch.no_grad():
-            C,H,W = input_shape
-            dummy = torch.randn(1, C, H, W, device=device)
+            dummy = torch.randn(1, 3, 32, 32, device=device)
             _, feats = self.model.feature_list(dummy)
         self.num_layers = len(feats)
+        self.layer_dims = [f.size(1) for f in feats]
 
-        # will hold a sklearn NearestNeighbors for each layer
-        self.neigh = [None] * self.num_layers
+        # containers filled by .fit()
+        self.reference_feats: List[np.ndarray] = []   # per layer
+        self.regressor: Optional[nn.Linear] = None
 
-    def fit(self, train_loader, k=None):
-        """
-        Build a k-NN index on training features at each layer.
-        train_loader should yield (inputs, _) on in‐distribution data.
-        """
-        if k is not None:
-            self.k = k
+    def fit(self, train_loader):
 
-        self.model.eval()
-        # collect features per layer
-        feats_acc = {i: [] for i in range(self.num_layers)}
-        for x, _ in train_loader:
-            x = x.to(self.device)
-            with torch.no_grad():
-                _, feats = self.model.feature_list(x)
-            for i, f in enumerate(feats):
-                # global‐average‐pool spatial dims
-                f = f.view(f.size(0), f.size(1), -1).mean(dim=2)
-                feats_acc[i].append(f.cpu().numpy())
+        feats_per_layer = [[] for _ in range(self.num_layers)]
 
-        # fit a NearestNeighbors model per layer
-        for i in range(self.num_layers):
-            data = np.vstack(feats_acc[i])  # shape (N, D_i)
-            nbrs = NearestNeighbors(n_neighbors=self.k+1, algorithm='auto')
-            nbrs.fit(data)
-            self.neigh[i] = nbrs
-
-        print(f"LIDDetector: fitted {self.num_layers} layer(s) with k={self.k}")
-
-    def forward(self, x):
-        """
-        Compute per-layer LID scores for input batch x.
-        Returns a tensor of shape (B, num_layers) on self.device.
-        """
-        assert all(m is not None for m in self.neigh), "You must call .fit(...) first"
-        self.model.eval()
-
-        x = x.to(self.device)
-        if x.dim() == 3:
-            x = x.unsqueeze(0)
-
-        # 1) extract features at all layers
         with torch.no_grad():
-            _, feats = self.model.feature_list(x)
+            for x, _ in train_loader:
+                x = x.to(self.device)
+                _, feats = self.model.feature_list(x)
+
+                for i, f in enumerate(feats):
+                    f = f.view(f.size(0), f.size(1), -1).mean(dim=2)  # GAP
+                    feats_per_layer[i].append(f.cpu().numpy())
+
+        self.reference_feats = []
+        rng = np.random.default_rng(seed=0)
+
+        for mat in feats_per_layer:
+            mat = np.concatenate(mat, axis=0)
+            if mat.shape[0] > self.max_ref_per_layer:
+                idx = rng.choice(mat.shape[0], self.max_ref_per_layer,
+                                 replace=False)
+                mat = mat[idx]
+            self.reference_feats.append(mat.astype(np.float32))
+
+        print(f"[LID] collected reference activations "
+              f"(layers={self.num_layers},  k={self.k})")
+
+    def _lid_score(self, x: torch.Tensor) -> torch.Tensor:
+        with torch.no_grad():
+            _, feats = self.model.feature_list(x.to(self.device))
 
         lid_scores = []
         for i, f in enumerate(feats):
-            # 2) flatten and global‐average‐pool
-            f_flat = f.view(f.size(0), f.size(1), -1).mean(dim=2)
-            f_np = f_flat.cpu().numpy()  # (B, D_i)
+            f_q = f.view(f.size(0), f.size(1), -1).mean(dim=2)        # GAP
+            f_q = f_q.cpu().numpy().astype(np.float32)
+            s   = lg.mle_batch(self.reference_feats[i], f_q, self.k)  # (B,)
+            lid_scores.append(torch.from_numpy(s).float())
 
-            # 3) query k+1 neighbors (first neighbor is itself at distance 0)
-            dists, _ = self.neigh[i].kneighbors(f_np)  # => (B, k+1)
-            dists = dists[:, 1:]                       # drop self‐match => (B, k)
+        return torch.stack(lid_scores, dim=1).to(self.device)         # (B,L)
 
-            # 4) MLE estimator: ˆLID = -k / sum_j log(r_j / r_k)
-            r_k = dists[:, -1].reshape(-1, 1)           # (B,1)
-            logs = np.log(dists / r_k)                 # (B,k)
-            lids = - (self.k / np.sum(logs, axis=1))   # (B,)
+    def train_regressor(self, val_loader, norm, attacker):
+        xs, ys = [], []
 
-            lid_scores.append(torch.from_numpy(lids).to(self.device))
+        self.model.eval()
+        for x, y in val_loader:
+            # natural ---------------------------------------------------------
+            lid_nat = self._lid_score(norm(x.to(self.device))).cpu().numpy()
+            xs.append(lid_nat)
+            ys.append(np.zeros(lid_nat.shape[0], dtype=np.float32))
 
-        # (num_layers, B) → (B, num_layers)
-        return torch.stack(lid_scores, dim=1)
+            # adversarial -----------------------------------------------------
+            x_adv = attacker.attack(x.to(self.device), y.to(self.device))
+            lid_adv = self._lid_score(norm(x_adv)).cpu().numpy()
+            xs.append(lid_adv)
+            ys.append(np.ones(lid_adv.shape[0], dtype=np.float32))
+
+        X = np.vstack(xs)
+        y = np.concatenate(ys)
+
+        lr = LogisticRegressionCV(n_jobs=-1).fit(X, y)
+
+        # copy weights → tiny torch layer (makes .forward fast & differentiable)
+        self.regressor = nn.Linear(X.shape[1], 1, bias=True)
+        with torch.no_grad():
+            self.regressor.weight.copy_(torch.from_numpy(lr.coef_).float())
+            self.regressor.bias.copy_(torch.from_numpy(lr.intercept_).float())
+        self.regressor.to(self.device).eval()
+
+        print("[LID] logistic regressor trained.")
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        if self.regressor is None:
+            raise RuntimeError("Call train_regressor(...) first.")
+
+        lid_feat = self._lid_score(x)          # (B, L)
+        logit    = self.regressor(lid_feat)    # (B, 1)
+        return torch.sigmoid(logit).squeeze(1) # (B,)
+
+    def save(self, path: str):
+        os.makedirs(path, exist_ok=True)
+        torch.save(self.model.state_dict(),        os.path.join(path, 'model.pth'))
+        torch.save(self.reference_feats,           os.path.join(path, 'ref_feats.pt'))
+        torch.save({'k': self.k,
+                    'layer_dims': self.layer_dims}, os.path.join(path, 'meta.pth'))
+        if self.regressor is not None:
+            torch.save(self.regressor.state_dict(),
+                       os.path.join(path, 'regressor.pth'))
+        print(f"[LID] saved detector to {path}")
+
+    def load(self, path: str):
+        self.model.load_state_dict(torch.load(os.path.join(path, 'model.pth'),
+                                              map_location=self.device))
+        self.reference_feats = torch.load(os.path.join(path, 'ref_feats.pt'),
+                                          map_location='cpu')
+        meta = torch.load(os.path.join(path, 'meta.pth'),
+                          map_location='cpu')
+        self.k           = meta['k']
+        self.layer_dims  = meta['layer_dims']
+
+        reg_pth = os.path.join(path, 'regressor.pth')
+        if os.path.exists(reg_pth):
+            self.regressor = nn.Linear(len(self.layer_dims), 1)
+            self.regressor.load_state_dict(torch.load(reg_pth,
+                                                      map_location=self.device))
+            self.regressor.to(self.device).eval()
+        print(f"[LID] loaded detector from {path}")
