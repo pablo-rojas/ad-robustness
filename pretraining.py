@@ -44,22 +44,22 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataset = get_dataset(args.dataset)
     norm = dataset.normalize
-    if args.dataset == 'mnist':
-        transform_train = transforms.Compose([norm])
-    else:
+    if args.dataset == 'cifar':
         transform_train = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
             norm
             ])
-    transform_train = transforms.Compose([norm])
-    train_loader, test_loader = dataset.make_loaders(batch_size=args.batch_size, workers=args.workers, only_train=True)
+    else:
+        transform_train = transforms.Compose([norm])
 
-    #model = resnet18_classifier(device, dataset.ds_name, pretrained=False)
-    model = WideResNet(depth=94,
-                   num_classes=10,
-                   widen_factor=16,
-                   dropRate=0.3)
+    train_loader, val_loader, test_loader = dataset.make_loaders(batch_size=args.batch_size, workers=args.workers)
+
+    model = resnet18_classifier(device, dataset.ds_name, pretrained=False)
+    # model = WideResNet(depth=94,
+    #                num_classes=10,
+    #                widen_factor=16,
+    #                dropRate=0.3)
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
@@ -74,12 +74,12 @@ def main(args):
         epoch_start_time = time.time()
         
         train_loss = train(model, train_loader, criterion, optimizer, transform_train, device)
-        test_loss, test_acc = test(model, test_loader, criterion, norm, device)
+        test_loss, test_acc = test(model, val_loader, criterion, norm, device)
         
         if test_acc >= best_acc:
             best_acc = test_acc
             best_model_wts = model.state_dict()
-            file_name = f'models/wideresnet18_{args.dataset}_best.pth'
+            file_name = f'models/resnet18_{args.dataset}_best.pth'
             torch.save(model.state_dict(), file_name)
         
         epoch_end_time = time.time()
@@ -93,7 +93,7 @@ def main(args):
         est_hours, est_rem = divmod(estimated_time_left, 3600)
         est_minutes, est_seconds = divmod(est_rem, 60)
         
-        print(f'Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}, '
+        print(f'Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.4f}, Val Loss: {test_loss:.4f}, Val Acc: {test_acc:.4f}, '
               f'Elapsed Time: {int(elapsed_hours):02}:{int(elapsed_minutes):02}:{int(elapsed_seconds):02}, '
               f'Estimated Time Left: {int(est_hours):02}:{int(est_minutes):02}:{int(est_seconds):02}')
 
@@ -105,23 +105,22 @@ def main(args):
         model.load_state_dict(best_model_wts)
         if not os.path.exists('models'):
             os.makedirs('models')
-        #file_name = f'models/resnet18_{args.dataset}.pth'
-        file_name = f'models/wideresnet18_{args.dataset}.pth'
+        file_name = f'models/resnet18_{args.dataset}.pth'
         torch.save(model.state_dict(), file_name)
-        print(f'Best model saved to {file_name} with accuracy {best_acc:.4f}')
+
+        test_acc = test(model, test_loader, criterion, norm, device)[1]
+        print(f'Best model saved to {file_name} with accuracy Val: {best_acc:.4f}, Test: {test_acc:.4f}')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train ResNet18 on MNIST or CIFAR datasets')
-    parser.add_argument('--dataset', type=str, default='cifar', help='Dataset to use: mnist or cifar')
+    parser.add_argument('--dataset', type=str, default='svhn', help='Dataset to use: mnist or cifar')
     parser.add_argument('--batch_size', type=int, default=128, help='Batch size for training')
-    parser.add_argument('--epochs', type=int, default=150, help='Number of epochs to train')
+    parser.add_argument('--epochs', type=int, default=90, help='Number of epochs to train')
     parser.add_argument('--lr', type=float, default=0.01, help='Learning rate')
     parser.add_argument('--workers', type=int, default=8, help='Number of data loading workers')
     parser.add_argument('--momentum', type=float, default=0.9, help='Momentum for SGD optimizer')
     parser.add_argument('--weight_decay', type=float, default=5e-4, help='Weight decay for SGD optimizer')
    
-
-
    
     args = parser.parse_args()
     main(args)

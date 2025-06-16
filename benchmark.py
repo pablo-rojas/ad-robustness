@@ -20,7 +20,7 @@ from ACGAN.GAN.acgan_res import ACGAN_Res
 from ACGAN.attacks.cw import CW
 from ACGAN.attacks.FGSM import FGSM
 
-from mahalanobis.detector import MahalanobisDetector
+from mahalanobis.detector import MahalanobisDetector, LIDDetector
 
 # Import PGD attacker.
 from robustness import attacker
@@ -56,9 +56,15 @@ def init_detector(config, device, target_model, dataset):
         detector.discriminator.eval()
     
     elif config['type'] == 'mahalanobis':
-        detector = MahalanobisDetector(target_model, num_classes=num_classes, device='cuda', net_type='resnet', dataset=dataset)
-        detector_path = f"models/mahalanobis_detector_{config['dataset']}"
-        detector.load(detector_path)
+        detector = MahalanobisDetector(target_model, device='cuda', net_type='resnet', dataset=dataset)
+        detector.load(config['path'])
+        detector.model.eval()
+
+    elif config['type'] == 'lid':
+        detector = LIDDetector(target_model, device='cuda', dataset=dataset)
+        detector.load(config['path'])
+        detector.model.eval()
+
     else:
         raise ValueError(f"Unknown detector type: {config['type']}")
     

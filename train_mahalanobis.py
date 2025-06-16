@@ -64,7 +64,7 @@ def main(config, type='mahalanobis', read_from_file=False):
     torch.manual_seed(seed)
     np.random.seed(seed)
     torch.backends.cudnn.deterministic = True
-    detector_path = f"models/mahalanobis_detector_{config['dataset']}"
+    detector_path = f"models/{type}_detector_{config['dataset']}"
     batch_size = 100 if type == 'lid' else 1
 
     # Get the dataset and create data loaders
@@ -97,14 +97,14 @@ def main(config, type='mahalanobis', read_from_file=False):
         detector.load(detector_path)
 
     # Evaluate the detector
-    results = val(detector, test_loader, device, norm, n_samples=500, epsilon=0.01)
+    results = val(detector, test_loader, device, norm, n_samples=500, epsilon=0.05)
     print(f"Detection Accuracy: {results['det_acc']:.2f}%")
     print(f"Partial AUC: {results['pAUC']:.4f}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate the detector model.")
-    parser.add_argument('--config', type=str, default='cfg/imagenet_train_us.json', help='Path to the configuration file.')
+    parser.add_argument('--config', type=str, default='cfg/mnist_train_us.json', help='Path to the configuration file.')
     parser.add_argument('--type', type=str, default='lid', help='Type of detector to use. Options: mahalanobis, lid')
     args = parser.parse_args()
     config = load_config(args.config)

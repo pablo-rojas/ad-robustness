@@ -15,6 +15,10 @@
         {
             "type": "mahalanobis",
             "path": "models/mahalanobis_detector_cifar"
+        },
+        {
+            "type": "lid",
+            "path": "models/lid_detector_cifar"
         }
     ],
     "dataset": "cifar",

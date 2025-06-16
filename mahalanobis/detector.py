@@ -292,9 +292,16 @@ class LIDDetector(nn.Module):
         self.k      = k
         self.max_ref_per_layer = max_ref_per_layer   # RAM safety
 
-        # discover how many “feature layers” exist and their dims
+        # figure out how many feature‐layers and their dims
+        self.model.eval()
         with torch.no_grad():
-            dummy = torch.randn(1, 3, 32, 32, device=device)
+            if dataset.ds_name == 'mnist':
+                dummy = torch.randn(1,1,28,28, device=device)
+            elif dataset.ds_name == 'imagenet':
+                dummy = torch.randn(1,3,224,224, device=device)
+            else: # cifar, svhn, etc.
+                # assume 32x32 input for CIFAR-like datasets
+                dummy = torch.randn(1,3,32,32, device=device)
             _, feats = self.model.feature_list(dummy)
         self.num_layers = len(feats)
         self.layer_dims = [f.size(1) for f in feats]
@@ -373,7 +380,7 @@ class LIDDetector(nn.Module):
 
         print("[LID] logistic regressor trained.")
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x, labels=None) -> torch.Tensor:
 
         if self.regressor is None:
             raise RuntimeError("Call train_regressor(...) first.")

@@ -15,6 +15,7 @@ except ImportError:
 model_paths = {
     'cifar': 'models/resnet18_cifar.pth',
     'mnist': 'models/resnet18_mnist.pth',
+    'svhn': 'models/resnet18_svhn.pth',
     'imagenet': None  # Uses torchvision's pretrained weights
 }
 
@@ -87,6 +88,12 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None, pretrained=
         else:
             model = models.resnet18()
 
+    elif dataset=='svhn':
+        model = ResNet18(dim=3)
+        if pretrained and path is not None:
+            checkpoint = torch.load(path, map_location=device, weights_only=True)
+            model.load_state_dict(checkpoint)
+
     else:
         raise ValueError(f"Dataset {dataset} not supported")
     
@@ -96,6 +103,30 @@ def resnet18_classifier(device='cpu', dataset='imagenet', path=None, pretrained=
     return model
 
 def resnet18_feature_extractor(device='cpu', dataset='imagenet', path="models/resnet18_imagenet.pth", freeze=True):
+    """Creates and returns a ResNet18 feature extractor for different datasets.
+    This function initializes a ResNet18-based feature extractor tailored for specific datasets
+    (CIFAR, MNIST, or ImageNet). It loads pre-trained weights from the specified path and
+    optionally freezes the model parameters for feature extraction.
+    Args:
+        device (str, optional): Device to load the model on ('cpu' or 'cuda'). Defaults to 'cpu'.
+        dataset (str, optional): Target dataset type. Supported values are 'cifar', 'mnist', 
+            and 'imagenet'. Defaults to 'imagenet'.
+        path (str, optional): Path to the pre-trained model weights file. Defaults to 
+            "models/resnet18_imagenet.pth".
+        freeze (bool, optional): Whether to freeze model parameters and set to evaluation mode.
+            Defaults to True.
+    Returns:
+        torch.nn.Module: A ResNet18-based feature extractor model loaded with pre-trained weights
+            and configured for the specified dataset.
+    Raises:
+        ValueError: If the specified dataset is not supported (not 'cifar', 'mnist', or 'imagenet').
+    Note:
+        - For MNIST dataset: Uses DenseCIFARResNet18 with single channel input.
+        - For ImageNet dataset: Uses standard ResNet18 modified for dense feature extraction.
+        - The function handles various checkpoint formats and automatically strips 'module.' 
+          and 'model.' prefixes from state dictionary keys when needed. This has been done 
+        to ensure compatibility with models trained from different sources.
+    """
     
     if dataset=='cifar':
         if 'wideresnet' in (path or '').lower():
@@ -147,6 +178,12 @@ def resnet18_feature_extractor(device='cpu', dataset='imagenet', path="models/re
         resnet18 = models.resnet18(weights='IMAGENET1K_V1').to(device)
         resnet18 = modify_resnet_for_dense(resnet18)
         teacher_feature_extractor = DenseResNet18(resnet18)
+
+    elif dataset=='svhn':
+        teacher_feature_extractor = DenseCIFARResNet18(BasicBlock, [2, 2, 2, 2], dim=3).to(device) # Note how the use of this class allows to read the deafault resnet model, but changes the padding and stride, and skips the lineas and avgpool layers at the end
+        checkpoint = torch.load(path, map_location=device, weights_only=True)
+
+        teacher_feature_extractor.load_state_dict(checkpoint)
 
     else:
         raise ValueError(f"Dataset {dataset} not supported")
