@@ -225,8 +225,6 @@ def main(config):
 
     # Initialize the Tensorboard writer
     writer = UnifiedSummaryWriter()
-    #writer.add_hparams(flatten_dict(config), {})
-    #writer.add_text("Hyperparameters", json.dumps(config, indent=2))
 
     # Get the dataset and create data loaders
     dataset = get_dataset(config['dataset'])
