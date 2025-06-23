@@ -4,23 +4,20 @@ import json
 import torch
 import argparse
 import random
-from tqdm import tqdm
-from torch import nn
 import numpy as np
-from ACGAN.attacks.FGSM import FGSM
-from src.eval_utils import partial_auc, get_target, sd_statistic
+
+# Import necessary libraries for data loading
+from torch.utils.data import Sampler
 
 # Import your dataset class from your own code
 from src.dataset_utils import get_dataset
 from src.model_utils import resnet18_classifier
+from src.eval_utils import partial_auc, get_target, sd_statistic
 
 # Import the CNN and ACGAN definitions from the ACGAN folder
 from ACGAN.GAN.acgan_1 import ACGAN
 from ACGAN.GAN.acgan_res import ACGAN_Res
-
-# For the pretrained resnet18 model from the PyTorch model hub
-import torchvision.models as models
-from torch.utils.data import Sampler
+from ACGAN.attacks.FGSM import FGSM
 
 class FixedOrderSampler(Sampler):
     def __init__(self, indices):
@@ -130,10 +127,24 @@ if __name__ == "__main__":
                         help='Number of epochs to train the model (default: 90)')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='Batch size for training (default: 64)')
+    parser.add_argument('--seed', type=int, default=None,
+                        help='Random seed for reproducibility (default: None)')
 
     args = parser.parse_args()              
     dataset_name = args.dataset.lower()
-    experiment_name = dataset_name + '_acgan'
+    if args.seed is None:
+        experiment_name = dataset_name + '_acgan'
+        seed = 42  # Default seed if not provided
+    else:
+        experiment_name = dataset_name + '_acgan_' + str(args.seed)
+        seed = args.seeds
+        
+    # Set the random seed for reproducibility
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
     # Create directory for saving the trained model
     save_path = os.path.join("models", experiment_name)
@@ -141,7 +152,7 @@ if __name__ == "__main__":
 
     # Load your dataset using your own dataset class; fixed batch size=100.
     dataset = get_dataset(dataset_name)
-    train_loader, val_loader, test_loader = dataset.make_loaders(workers=4, batch_size=args.batch_size)
+    train_loader, val_loader, test_loader = dataset.make_loaders(workers=4, batch_size=args.batch_size, seed=seed)
 
     test_loader.dataset.ds_name = dataset_name
 
@@ -170,7 +181,6 @@ if __name__ == "__main__":
     )
     else:
         gan = ACGAN_Res(in_dim=in_dim, class_dim=num_classes, CNN=model)
-
    
     print("Starting ACGAN training ...")
     # The gan.train() method internally loops over epochs and batches.

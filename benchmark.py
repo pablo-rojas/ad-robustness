@@ -5,6 +5,8 @@ import argparse
 import numpy as np
 from tabulate import tabulate
 from tqdm import tqdm
+from robustness import attacker
+
 
 # Import dataset and evaluation utilities.
 from src.dataset_utils import get_dataset
@@ -12,7 +14,6 @@ from src.detector import UninformedStudents
 from src.model_utils import resnet18_classifier
 from src.eval_utils import *
 from src.misc_utils import load_config, setup_attack_kwargs, get_targeted
-from src.attacks import PGD
 
 # Import ACGAN modules.
 from ACGAN.GAN.acgan_1 import ACGAN
@@ -20,10 +21,8 @@ from ACGAN.GAN.acgan_res import ACGAN_Res
 from ACGAN.attacks.cw import CW
 from ACGAN.attacks.FGSM import FGSM
 
+# Import Mahalanobis and LID detectors.
 from mahalanobis.detector import MahalanobisDetector, LIDDetector
-
-# Import PGD attacker.
-from robustness import attacker
 
 def init_detector(config, device, target_model, dataset):
 
