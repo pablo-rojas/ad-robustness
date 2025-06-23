@@ -122,12 +122,18 @@ def test(gan, test_loader, device, n_samples=400, epsilon=0.05, targeted=1):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train ACGAN using a custom dataset")
-    parser.add_argument('--config', type=str, default='cfg/cifar_config_acgan.json',
-                        help='Path to the configuration file.')
-    args = parser.parse_args()
+    parser.add_argument('--dataset', type=str, default='svhn', 
+                        help='Dataset to use for training (default: cifar)')
+    parser.add_argument('--lr', type=float, default=0.0002,
+                        help='Learning rate for the optimizer (default: 0.0002)')
+    parser.add_argument('--epochs', type=int, default=90,
+                        help='Number of epochs to train the model (default: 90)')
+    parser.add_argument('--batch_size', type=int, default=64,
+                        help='Batch size for training (default: 64)')
 
-    dataset_name = 'imagenet'
-    experiment_name = 'imagenet_acgan'
+    args = parser.parse_args()              
+    dataset_name = args.dataset.lower()
+    experiment_name = dataset_name + '_acgan'
 
     # Create directory for saving the trained model
     save_path = os.path.join("models", experiment_name)
@@ -135,7 +141,7 @@ if __name__ == "__main__":
 
     # Load your dataset using your own dataset class; fixed batch size=100.
     dataset = get_dataset(dataset_name)
-    train_loader, val_loader, test_loader = dataset.make_loaders(workers=4, batch_size=64)
+    train_loader, val_loader, test_loader = dataset.make_loaders(workers=4, batch_size=args.batch_size)
 
     test_loader.dataset.ds_name = dataset_name
 
@@ -168,7 +174,7 @@ if __name__ == "__main__":
    
     print("Starting ACGAN training ...")
     # The gan.train() method internally loops over epochs and batches.
-    gan.train(train_loader, lr=0.0002, num_epochs=90)
+    gan.train(train_loader, lr=args.lr, num_epochs=args.epochs)
 
     # Save the generator and discriminator models after training.
     gan.save_model(save_path)
