@@ -11,6 +11,18 @@ from torch.autograd import Variable
 
 import mahalanobis.lib_generation as lg
 
+def get_dummy(dataset_name, device):
+    """
+    Returns a dummy input tensor based on the dataset name.
+    """
+    if dataset_name == 'mnist':
+        return torch.randn(1, 1, 28, 28, device=device)
+    elif dataset_name == 'imagenet':
+        return torch.randn(1, 3, 224, 224, device=device)
+    else:  # cifar, svhn, etc.
+        # assume 32x32 input for CIFAR-like datasets
+        return torch.randn(1, 3, 32, 32, device=device)
+    
 
 class MahalanobisDetector(nn.Module):
     def __init__(self, model, device="cuda", net_type="resnet", dataset='cifar'):
@@ -31,13 +43,7 @@ class MahalanobisDetector(nn.Module):
         # figure out how many feature‐layers and their dims
         self.model.eval()
         with torch.no_grad():
-            if dataset.ds_name == 'mnist':
-                dummy = torch.randn(1,1,28,28, device=device)
-            elif dataset.ds_name == 'imagenet':
-                dummy = torch.randn(1,3,224,224, device=device)
-            else: # cifar, svhn, etc.
-                # assume 32x32 input for CIFAR-like datasets
-                dummy = torch.randn(1,3,32,32, device=device)
+            dummy = get_dummy(dataset.ds_name, device)
             _, feats = self.model.feature_list(dummy)
         self.layer_dims = [f.size(1) for f in feats]
         
@@ -283,25 +289,18 @@ class LIDDetector(nn.Module):
             model: nn.Module,
             dataset,
             device: str = "cuda",
-            k: int = 20,                  # #nearest-neighbours for LID
-            max_ref_per_layer: int = 2000   # cap to keep RAM in check
+            k: int = 20                  # #nearest-neighbours for LID
     ):
         super().__init__()
         self.device = device
         self.model  = model.to(device).eval()
         self.k      = k
-        self.max_ref_per_layer = max_ref_per_layer   # RAM safety
+        self.max_ref_per_layer = 10e20  # max number of reference features per layer
 
         # figure out how many feature‐layers and their dims
         self.model.eval()
         with torch.no_grad():
-            if dataset.ds_name == 'mnist':
-                dummy = torch.randn(1,1,28,28, device=device)
-            elif dataset.ds_name == 'imagenet':
-                dummy = torch.randn(1,3,224,224, device=device)
-            else: # cifar, svhn, etc.
-                # assume 32x32 input for CIFAR-like datasets
-                dummy = torch.randn(1,3,32,32, device=device)
+            dummy = get_dummy(dataset.ds_name, device)
             _, feats = self.model.feature_list(dummy)
         self.num_layers = len(feats)
         self.layer_dims = [f.size(1) for f in feats]

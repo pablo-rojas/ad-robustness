@@ -74,7 +74,7 @@ def train(config, device, norm, writer, train_loader, detector, val_loader=None)
         print(f"Epoch: {epoch}, pAUC: {results['pAUC']}, time: {epoch_time:.1f}s, Est. time left: {estimated_time_left/60:.1f}min")
         epoch += 1
 
-def val(detector, val_loader, device, norm, n_samples=100, epsilon=0.05):
+def val(detector, val_loader, device, norm, n_samples=100, epsilon=8.0/255.0):
     dataset = val_loader.dataset
     target_model = resnet18_classifier(device, dataset.ds_name, path=model_paths[dataset.ds_name])
 
@@ -257,7 +257,7 @@ def main(config):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate the detector model.")
-    parser.add_argument('--config', type=str, default='cfg/cifar_train_us_phard.json', help='Path to the configuration file.')
+    parser.add_argument('--config', type=str, default='cfg/cifar_train_us.json', help='Path to the configuration file.')
     args = parser.parse_args()
     config = load_config(args.config)
 

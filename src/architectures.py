@@ -84,7 +84,7 @@ class Patch17Descriptor(nn.Module):
         
         # Leaky ReLU with slope 5e-3
         self.leaky_relu = nn.LeakyReLU(negative_slope=5e-3)
-        
+        '''
         # Architecture for p = 17
         self.conv1 = nn.Conv2d(in_channels=dim, out_channels=256, kernel_size=5, stride=1, padding=padding)
         self.conv2 = nn.Conv2d(in_channels=256, out_channels=512, kernel_size=5, stride=1, padding=padding)
@@ -107,7 +107,7 @@ class Patch17Descriptor(nn.Module):
         
         # Leaky ReLU with slope 5e-3
         self.leaky_relu = nn.LeakyReLU(negative_slope=5e-3)
-
+        '''
         
 
     def forward(self, x):

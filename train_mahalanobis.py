@@ -64,7 +64,7 @@ def main(config, type='mahalanobis', read_from_file=False):
     torch.manual_seed(seed)
     np.random.seed(seed)
     torch.backends.cudnn.deterministic = True
-    detector_path = f"models/{type}_detector_{config['dataset']}"
+    detector_path = config['model_path']
     batch_size = 100 if type == 'lid' else 1
 
     # Get the dataset and create data loaders

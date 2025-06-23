@@ -82,14 +82,14 @@ def increasing_grid_search(template_config, lr_range, batch_size_range, grid_siz
 
                 tested.add((rounded_lr, bs))
 
-parser = argparse.ArgumentParser(description="Run a random search for the CIFAR-10 dataset.")
-parser.add_argument('--config', type=str, default='cfg/cifar_train_us.json', help='Path to the configuration file.')
+parser = argparse.ArgumentParser(description="Run a random search for the SVHN dataset.")
+parser.add_argument('--config', type=str, default='cfg/svhn_train_us.json', help='Path to the configuration file.')
 args = parser.parse_args()
 
 template_config = load_config(args.config)
 
 lr_range = [5e-5, 5e-3]
-batch_size_range = [1, 128]
+batch_size_range = None #[1, 128]
 beta1_range = [0.7, 0.999]
 weight_decay_range = [1e-7, 0.1]
 n_iter = 1000
