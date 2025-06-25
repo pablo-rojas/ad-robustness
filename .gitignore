@@ -20,6 +20,7 @@ venv/
 runs/
 models/
 results/
+data
 data/
 
 # Temporarily excluded, as it messes with copilot's commit suggestions

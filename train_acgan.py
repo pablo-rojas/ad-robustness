@@ -52,43 +52,33 @@ def test(gan, test_loader, device, n_samples=400, epsilon=0.05, targeted=1):
 
     processed = 0
     for images, labels in test_loader:
-        # For classification, move inputs to GPU.
-        y = target_model(dataset.normalize(images.to(device))).detach().cpu()
+        with torch.no_grad():
+            # For classification, move inputs to GPU.
+            y = target_model(dataset.normalize(images.to(device))).detach().cpu()
 
-        # if incorrect prediction, skip the sample
-        if (y.argmax(1) != labels).sum().item() > 0:
-            continue
-
-        # Choose target labels depending on the attack type.
-        if targeted == 1: target_labels = get_target(labels)
-        elif targeted == -1: target_labels = labels
-        else:
-            raise ValueError("Invalid value for targeted parameter. Must be 1 or -1.")
+            # Choose target labels depending on the attack type.
+            if targeted == 1: target_labels = get_target(labels)
+            elif targeted == -1: target_labels = labels
+            else:
+                raise ValueError("Invalid value for targeted parameter. Must be 1 or -1.")
 
         # Generate adversarial images using the FGSM attack.
         adv_images = fgsm.attack(images.to(device), target_labels.to(device))
 
-        # Compute classification accuracy on adversarial images (using the classifier on GPU).
-        y_adv = target_model(dataset.normalize(adv_images).to(device)).detach().cpu()
+        with torch.no_grad():
+            # Compute classification accuracy on adversarial images (using the classifier on GPU).
+            y_adv = target_model(dataset.normalize(adv_images).to(device)).detach().cpu()
 
-        # If the adversarial attack fails, skip images.
-        if (y_adv.argmax(1) != labels).sum().item() < len(labels):
-            continue
+            # Check: Calculate natural and adversarial accuracy (Note that they should be 100% and 0% respectively).
+            nat_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
+            adv_accuracy += (y_adv.argmax(1) == labels).sum().item()/n_samples
 
-        # if targeted attack, check if the target label is achieved
-        if targeted == 1 and (y_adv.argmax(1) != target_labels).sum().item() > 0:
-            continue
+            # Calculate AS
+            anomaly_score = sd_statistic(gan.discriminator(images.to(device)), labels)
+            nat_as = np.append(nat_as, anomaly_score.item())
 
-        # Check: Calculate natural and adversarial accuracy (Note that they should be 100% and 0% respectively).
-        nat_accuracy += (y.argmax(1) == labels).sum().item()/n_samples
-        adv_accuracy += (y_adv.argmax(1) == labels).sum().item()/n_samples
-
-        # Calculate AS
-        anomaly_score = sd_statistic(gan.discriminator(images.to(device)), labels)
-        nat_as = np.append(nat_as, anomaly_score.item())
-
-        anomaly_score_adv = sd_statistic(gan.discriminator(adv_images.to(device)), y_adv.argmax(1))
-        adv_as = np.append(adv_as, anomaly_score_adv.item())
+            anomaly_score_adv = sd_statistic(gan.discriminator(adv_images.to(device)), y_adv.argmax(1))
+            adv_as = np.append(adv_as, anomaly_score_adv.item())
 
         
         if processed >= n_samples:
